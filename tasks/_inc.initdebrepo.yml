@@ -1,0 +1,74 @@
+---
+
+- name: Configuring DEB repositories - managing repository directory
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/deb"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "2775"
+    state: directory
+
+- name: Configuring DEB repositories - managing public repository substructure
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/deb/{{ item }}"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "2775"
+    state: directory
+  with_items:
+    - db
+    - dists
+    - pool
+    - incoming
+
+- name: Configuring DEB repositories - creating restricted repository substructure
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/deb/{{ item }}"
+    owner: root
+    group: root
+    mode: 0755
+    state: directory
+  with_items:
+    - conf
+
+- name: Configuring DEB repositories - generating template REPREPRO distributions file
+  template:
+    src: reprepro.distributions.j2
+    dest: "{{ hm_alchemist__home_projects }}/{{ project_name }}/deb/conf/distributions"
+    owner: root
+    group: root
+    mode: 0644
+    backup: yes
+
+- name: Configuring DEB repositories - generating template REPREPRO options file
+  template:
+    src: reprepro.options.j2
+    dest: "{{ hm_alchemist__home_projects }}/{{ project_name }}/deb/conf/options"
+    owner: root
+    group: root
+    mode: 0644
+    backup: yes
+
+- name: Configuring DEB repositories - exporting signing repository key.
+  shell: "/usr/bin/gpg --homedir /home/buildbot/.gnupg --armor --export {{ item['gpg_key'] }} > {{ hm_alchemist__home_projects }}/{{ project_name }}/deb/{{ project_name }}-{{ item['codename'] }}.gpg"
+  args:
+    creates: "{{ hm_alchemist__home_projects }}/{{ project_name }}/deb/{{ project_name }}-{{ item['codename'] }}.gpg"
+  with_items: "{{ project_data['distributions'] }}"
+
+- name: Configuring DEB repositories - generating APT sources list file
+  template:
+    src: deb.sources.list.j2
+    dest: "{{ hm_alchemist__home_projects }}/{{ project_name }}/deb/{{ project_name }}-{{ item['codename'] }}.list"
+    owner: root
+    group: root
+    mode: 0644
+  with_items: "{{ project_data['distributions'] }}"
+
+- name: Configuring DEB repositories - generating installation instructions
+  template:
+    src: deb.install.sh.j2
+    dest: "{{ hm_alchemist__home_projects }}/{{ project_name }}/deb/install-{{ project_name }}-{{ item['codename'] }}.sh"
+    owner: root
+    group: root
+    mode: 0644
+  with_items: "{{ project_data['distributions'] }}"

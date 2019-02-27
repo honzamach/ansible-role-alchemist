@@ -1,0 +1,379 @@
+{%- extends "_layout.html" %}
+
+{%- block content %}
+
+            <h2>List of hosted projects</h2>
+            <br>
+            <div id="accordion">
+{% for project in projects %}
+                <div class="card">
+                    <div class="card-header bg-primary text-white" id="project-heading-{{ project.name }}">
+                        <h5 class="mb-0">
+                            <button class="btn btn-link{% if not loop.first %} collapsed{% endif %} text-uppercase" data-toggle="collapse" data-target="#project-content-{{ project.name }}" aria-expanded="{% if loop.first %}true{% else %}false{% endif %}" aria-controls="project-content-{{ project.name }}" style="font-size: 120%">
+                                <strong>{{ project.name }}</strong>
+                            </button>
+                        </h5>
+                    </div>
+                    <div id="project-content-{{ project.name }}" class="collapse{% if loop.first %} show{% endif %}" aria-labelledby="project-heading-{{ project.name }}" data-parent="#accordion">
+                        <div class="card-body">
+                            <ul class="nav nav-pills">
+                                <li class="nav-item">
+                                    <a href="#project-content-{{ project.name }}-tab-info" aria-controls="project-content-{{ project.name }}-tab-info" aria-expanded="true" role="tab" data-toggle="tab" class="nav-link text-uppercase active">
+                                        <i class="fas fa-fw fa-2x fa-info-circle" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="General information"></i>
+                                    </a>
+                                </li>
+                                {% if 'buildenvs' in project %}
+                                <li class="nav-item">
+                                    <a href="#project-content-{{ project.name }}-tab-buildenv" aria-controls="project-content-{{ project.name }}-tab-buildenv" aria-expanded="false" role="tab" data-toggle="tab" class="nav-link text-uppercase">
+                                        <i class="fas fa-fw fa-2x fa-cogs" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="Build environments"></i>
+                                    </a>
+                                </li>
+                                {% endif %}
+                                {% if "doc" in project.build_modules %}
+                                <li class="nav-item">
+                                    <a href="#project-content-{{ project.name }}-tab-doc" aria-controls="project-content-{{ project.name }}-tab-doc" aria-expanded="false" role="tab" data-toggle="tab" class="nav-link text-uppercase">
+                                        <i class="fas fa-fw fa-2x fa-book" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="Documentation"></i>
+                                    </a>
+                                </li>
+                                {% endif %}
+                                <li class="nav-item">
+                                    <a href="#project-content-{{ project.name }}-tab-git" aria-controls="project-content-{{ project.name }}-tab-git" aria-expanded="false" role="tab" data-toggle="tab" class="nav-link text-uppercase">
+                                        <i class="fab fa-fw fa-2x fa-git-square" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="Git repository"></i>
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a href="#project-content-{{ project.name }}-tab-files" aria-controls="project-content-{{ project.name }}-tab-files" aria-expanded="false" role="tab" data-toggle="tab" class="nav-link text-uppercase">
+                                        <i class="fas fa-fw fa-2x fa-folder-open" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="File repository"></i>
+                                    </a>
+                                </li>
+                                {% if "deb" in project.build_modules %}
+                                <li class="nav-item">
+                                    <a href="#project-content-{{ project.name }}-tab-deb" aria-controls="project-content-{{ project.name }}-tab-deb" aria-expanded="false" role="tab" data-toggle="tab" class="nav-link text-uppercase">
+                                        <i class="fab fa-fw fa-2x fa-linux" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="Debian repository"></i>
+                                    </a>
+                                </li>
+                                {% endif %}
+                                {% if remote_addr in config.developers %}
+                                <li class="nav-item">
+                                    <a href="#project-content-{{ project.name }}-tab-dump" aria-controls="project-content-{{ project.name }}-tab-dump" aria-expanded="false" role="tab" data-toggle="tab" class="nav-link text-uppercase">
+                                        <i class="fas fa-fw fa-2x fa-bug" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="Dump"></i>
+                                    </a>
+                                </li>
+                                {% endif %}
+                            </ul>
+                            <hr>
+
+                            <!-- ---------------------------------------------->
+
+                            <div id="project-content-{{ project.name }}-tabs" class="tab-content">
+                                <div role="tabpanel" id="project-content-{{ project.name }}-tab-info" class="tab-pane fade show active">
+                                    <h3>General information</h3>
+                                    <p class="lead">
+                                        {{ project.metadata.description }}
+                                    </p>
+                                    <table class="table table-borderless table-hover">
+                                        <tbody>
+                                            {% if "homepage" in project.metadata and project.metadata.homepage %}
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        <i class="fa fa-fw fa-2x fa-home" aria-hidden="true"></i> Homepage
+                                                    </strong>
+                                                </td>
+                                                <td>
+                                                    <a href="{{ project.metadata.homepage }}" target="_blank">
+                                                        <i class="fa fa-fw fa-globe" aria-hidden="true"></i> {{ project.metadata.homepage }}
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                            {% endif %}
+                                            {% if "bugtrack" in project.metadata and project.metadata.bugtrack %}
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        <i class="fa fa-fw fa-2x fa-bug" aria-hidden="true"></i> Bugtrack system
+                                                    </strong>
+                                                </td>
+                                                <td>
+                                                    <a href="{{ project.metadata.bugtrack }}" target="_blank">
+                                                        <i class="fa fa-fw fa-globe" aria-hidden="true"></i> {{ project.metadata.bugtrack }}
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                            {% endif %}
+                                            {% if "master_repo" in project.metadata and project.metadata.master_repo %}
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        <i class="fab fa-fw fa-2x fa-git-square" aria-hidden="true"></i> Primary repository
+                                                    </strong>
+                                                </td>
+                                                <td>
+                                                    <a href="{{ project.metadata.master_repo }}" target="_blank">
+                                                        <i class="fa fa-fw fa-globe" aria-hidden="true"></i> {{ project.metadata.master_repo }}
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                            {% endif %}
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        <i class="fa fa-fw fa-2x fa-archive" aria-hidden="true"></i> Distributions
+                                                    </strong>
+                                                </td>
+                                                <td>
+                                                    {% for distro in project.distributions %}
+                                                        <strong>{{ distro.codename }}</strong> <em>({{ distro.suite }})</em>{{ "<br>" | safe if not loop.last else "" | safe }}
+                                                    {% endfor %}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {% if 'buildenvs' in project %}
+                                <div role="tabpanel" id="project-content-{{ project.name }}-tab-buildenv" class="tab-pane fade">
+                                    <h3>Build environment settings</h3>
+                                    <hr>
+                                    <p>
+                                        Following is the description of test and build environment settings for each particular distribution. The project
+                                        should definitelly work correctly in the same environment.
+                                    </p>
+                                    {% for benvname, benvdata in project.buildenvs.items() %}
+                                    <p class="lead">Build environment for <em>{{ benvname }}</em> distribution:</p>
+                                    <table class="table table-hover">
+                                        <tbody>
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        System
+                                                    </strong>
+                                                </td>
+                                                <td>
+                                                    <code>{{ benvdata.system['os-release'] }}, {{ benvdata.system['machine'] }}, {{ benvdata.system['kernel-release'] }}</code>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        Python
+                                                    </strong>
+                                                </td>
+                                                <td>
+                                                    <code>{{ benvdata.python }}</code>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        Python libraries
+                                                    </strong>
+                                                </td>
+                                                <td style="max-height: 10em;">
+                                                    {% for lname in benvdata.pip.keys() | sort %}
+                                                    <code>{{ lname }} ({{ benvdata.pip[lname] }})</code>{% if not loop.last %},&nbsp;{% endif %}
+                                                    {% endfor %}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                    {% endfor %}
+                                </div>
+                                <!-- END TABPANEL -------------------------- -->
+                                {% endif %}
+
+
+                                {% if "doc" in project.build_modules %}
+                                <div role="tabpanel" id="project-content-{{ project.name }}-tab-doc" class="tab-pane fade">
+                                    <h3>Documentation</h3>
+                                    <hr>
+                                    <p>
+                                        Project documentation is automatically generated using <a href="http://www.sphinx-doc.org/en/stable/" target="_blank">Sphinx-doc</a> tool. There is a separate documentation for each project distribution.
+                                    </p>
+                                    <table class="table table-hover">
+                                        <tbody>
+                                            {% for distro in project.distributions %}
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        {{ distro.codename }}
+                                                    </strong>
+                                                </td>
+                                                <td>
+                                                    <em>
+                                                        {{ distro.suite }}
+                                                    </em>
+                                                </td>
+                                                <td>
+                                                    <a href="/{{ project.name }}/doc/{{ distro.codename }}/html/manual.html" target="_blank">
+                                                        <i class="fa fa-fw fa-external-link" aria-hidden="true"></i> browse documentation
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <!-- END TABPANEL -------------------------- -->
+                                {% endif %}
+
+                                <div role="tabpanel" id="project-content-{{ project.name }}-tab-git" class="tab-pane fade">
+                                    <h3>Git repository</h3>
+                                    <hr>
+                                    <p>
+                                        Git repository contains separate branch for each distribution:
+                                    </p>
+                                    <table class="table table-hover">
+                                        <tbody>
+                                            {% for distro in project.distributions %}
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        {{ distro.codename }}
+                                                    </strong>
+                                                </td>
+                                                <td>
+                                                    <em>
+                                                        {{ distro.suite }}
+                                                    </em>
+                                                </td>
+                                                <td>
+                                                    {{ distro.branch }}
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                    <p>
+                                        Please execute following command to clone the repository to your local workstation:
+                                    </p>
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+<pre><code>
+git clone {{ config.server_url }}/{{ project.name }}/repo.git {{ project.name }}
+</code></pre>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- END TABPANEL -------------------------- -->
+
+                                <div role="tabpanel" id="project-content-{{ project.name }}-tab-files" class="tab-pane fade">
+                                    <h3>File repository</h3>
+                                    <hr>
+                                    <p>
+                                        File repository contains packages of various type and other project files and artifacts. Each file in repository is signed using
+                                        GnuPG and SHA256 hash. There is a separate file repository for each project distribution. Please do not use packages from
+                                        <em>unstable</em> distribution unless you know what you are doing. If you are regular user, the <em>unstable</em> distribution is
+                                        not right for you, because it may contain, well, unstable or experimental code.
+                                    </p>
+                                    <table class="table table-hover">
+                                        <tbody>
+                                            {% for distro in project.distributions %}
+                                            <tr>
+                                                <td>
+                                                    <strong>
+                                                        {{ distro.codename }}
+                                                    </strong>
+                                                </td>
+                                                <td>
+                                                    <em>
+                                                        {{ distro.suite }}
+                                                    </em>
+                                                </td>
+                                                <td>
+                                                    <a href="/{{ project.name }}/files/{{ distro.codename }}/" target="_blank">
+                                                        <i class="fa fa-fw fa-external-link" aria-hidden="true"></i> browse repository
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                    {% if 'statistics' in project and 'files' in project.statistics %}
+                                    {% for distro in project.distributions %}
+                                    <p class="lead">Latest packages in <strong>{{ distro.codename }}</strong> distribution <em>({{ distro.suite }})</em>:</p>
+                                    {% if project.statistics.files[distro.codename] %}
+                                    <ul>
+                                        {% for pkgname, pkgdata in project.statistics.files[distro.codename].items() %}
+                                        <li>
+                                            <strong>{{ pkgname }}</strong>:&nbsp;
+                                            {% for pkgtype, typedata in pkgdata.items() %}
+                                            <a href="/{{ project.name }}/files/{{ distro.codename }}/{{ typedata.latest.file }}" data-toggle="tooltip" data-placement="top" title="{{ typedata.latest.mdate }}">
+                                                <em>{{ pkgtype }} ({{ typedata.latest.version }})</em>
+                                            </a>
+                                            {% if not loop.last %}&nbsp;<i class="fa fa-ellipsis-v" aria-hidden="true"></i>&nbsp;{% endif %}
+                                            {% endfor %}
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% else %}
+                                    <p>There are currently no packages in this distribution.</p>
+                                    {% endif %}
+                                    {% endfor %}
+                                    {% endif %}
+                                </div>
+                                <!-- END TABPANEL -------------------------- -->
+
+                                {% if "deb" in project.build_modules %}
+                                <div role="tabpanel" id="project-content-{{ project.name }}-tab-deb" class="tab-pane fade">
+                                    <h3>Debian repository</h3>
+                                    <hr>
+                                    <p>
+                                        Debian repository contains packages for Debian-based systems. There is a separate repository for each project distribution.
+                                        Please do not use packages from <em>unstable</em> distribution unless you know what you are doing. distribution is
+                                        not right for you, because it may contain, well, unstable or experimental code. We always provide packages only for
+                                        the latest stable release of Debian system.
+                                    </p>
+                                    {% for distro in project.distributions %}
+                                    <p class="lead"><strong>{{ distro.codename | capitalize }}</strong> distribution <em>({{ distro.suite }})</em>:</p>
+                                    <p>To install the repository please execute following commands:</p>
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+<pre><code>
+# Download list file for apt:
+wget -O /etc/apt/sources.list.d/{{ project.name }}-{{ distro.codename }}.list {{ config.server_url }}/{{ project.name }}/deb/{{ project.name }}-{{ distro.codename }}.list
+
+# Download and install repository GnuPG signing key:
+wget -O - {{ config.server_url }}/{{ project.name }}/deb/{{ project.name }}-{{ distro.codename }}.gpg | apt-key add -
+
+# Refresh apt cache:
+apt-get update
+
+# List all packages available in repository:
+grep "Package:" /var/lib/apt/lists/{{ server_fqdn }}_*{{ project.name }}*_Packages | uniq
+</code></pre>
+                                        </div>
+                                    </div>
+                                    {% if 'statistics' in project and distro.codename in project.statistics.deb %}
+                                    <p><strong>Package list:</strong></p>
+                                    <p>
+                                    {% if project.statistics.deb[distro.codename] %}
+                                    {% for pkgname in project.statistics.deb[distro.codename].keys() | sort | reverse %}
+                                        <code>{{ pkgname }}</code>{% if not loop.last %},&nbsp;{% endif %}
+                                    {% endfor %}
+                                    {% else %}
+                                        There are currently no packages in this distribution.
+                                    {% endif %}
+                                    </p>
+                                    {% endif %}
+                                    {% endfor %}
+                                </div>
+                                <!-- END TABPANEL -------------------------- -->
+                                {% endif %}
+
+                                {% if remote_addr in config.developers %}
+                                <div role="tabpanel" id="project-content-{{ project.name }}-tab-dump" class="tab-pane fade">
+                                    <h3>Dump</h3>
+                                    <pre><code>{{ project | pprint }}</code></pre>
+                                </div>
+                                <!-- END TABPANEL -------------------------- -->
+                                {% endif %}
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+{% endfor %}
+            </div>
+
+{% endblock content %}

@@ -1,0 +1,24 @@
+---
+
+- name: Configuring FILE repositories - managing repository directory
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/files"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "2775"
+    state: directory
+
+- name: Configuring FILE repositories - managing public repository substructure
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/files/{{ item['codename'] }}"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "2775"
+    state: directory
+  with_items: "{{ project_data['distributions'] }}"
+
+- name: Configuring FILE repositories - exporting signing repository key.
+  shell: "/usr/bin/gpg --homedir /home/buildbot/.gnupg --armor --export {{ item['gpg_key'] }} > {{ hm_alchemist__home_projects }}/{{ project_name }}/files/{{ item['codename'] }}/{{ project_name }}-{{ item['codename'] }}.gpg"
+  args:
+    creates: "{{ hm_alchemist__home_projects }}/{{ project_name }}/deb/{{ project_name }}-{{ item['codename'] }}.gpg"
+  with_items: "{{ project_data['distributions'] }}"

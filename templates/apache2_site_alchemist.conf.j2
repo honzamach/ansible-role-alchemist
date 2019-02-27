@@ -1,0 +1,127 @@
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+#
+#                             IMPORTANT WARNING
+#
+#  This file is managed remotely by Ansible orchestration tool. Any local
+#  changes will be overwritten without any notice !!! You have been warned !!!
+#
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+
+WSGIPythonPath /opt/alchemist/lib
+
+<IfModule mod_ssl.c>
+<VirtualHost _default_:443>
+    ServerAdmin webmaster@{{ ansible_fqdn }}
+    ServerName {{ ansible_fqdn }}
+
+    <FilesMatch "^\.">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+
+    DocumentRoot {{ hm_alchemist__home_projects }}
+    <Directory />
+        Options FollowSymLinks
+        AllowOverride None
+    </Directory>
+    <Directory {{ hm_alchemist__home_projects }}/>
+        Options +Indexes -MultiViews
+        AllowOverride None
+        Require all granted
+    </Directory>
+
+    #
+    # Configure access to Alchemist web interface.
+    #
+    WSGIDaemonProcess alchemist user=buildbot group=buildbot threads=5
+    WSGIScriptAlias /alchemist /opt/alchemist/bin/alchemist.wsgi
+    <Directory /opt/alchemist/lib>
+        WSGIProcessGroup alchemist
+        WSGIApplicationGroup %{GLOBAL}
+        Require all granted
+    </Directory>
+
+    RewriteEngine on
+    # Rewrite the path when accessed without a trailing slash.
+    RewriteRule ^/alchemist$ /alchemist/ [R]
+    # Rewrite webserver root to Alchemist application.
+    RewriteRule ^/$ /alchemist/ [R]
+
+    <Location />
+        Require all granted
+    </Location>
+
+    #
+    # Proxy configuration for accessing Buildbot web interface.
+    #
+    # http://docs.buildbot.net/latest/manual/cfg-www.html#reverse-proxy-configuration
+    #
+    SetEnvIf X-Url-Scheme https HTTPS=1
+    ProxyPreserveHost On
+    ProxyPass /buildbot/ws ws://127.0.0.1:8010/ws
+    ProxyPassReverse /buildbot/ws ws://127.0.0.1:8010/ws
+    ProxyPass /buildbot/ http://127.0.0.1:8010/
+    ProxyPassReverse /buildbot/ http://127.0.0.1:8010/
+
+    <Location /buildbot/>
+        AuthType shibboleth
+        ShibRequireSession On
+        Require shib-attr eppn {% for admin in hm_accounts__admins|sort %}{% if 'eppn' in site_users[admin] %}"{{ site_users[admin]['eppn'] }}"{{ " " if not loop.last else "" }}{% endif %}{% endfor %}
+
+    </Location>
+
+    RewriteCond %{LA-U:REMOTE_USER} (.+)$
+    RewriteRule . - [E=RU:%1,NS]
+    RequestHeader set REMOTE_USER %{RU}e
+
+    #
+    # Restrict access to sensitive Debian repository data.
+    #
+    <Directory "{{ hm_alchemist__home_projects }}/*/deb/conf/">
+        Order deny,allow
+        Deny from all
+    </Directory>
+    <Directory "{{ hm_alchemist__home_projects }}/*/deb/db/">
+        Order deny,allow
+        Deny from all
+    </Directory>
+    <Directory "{{ hm_alchemist__home_projects }}/*/deb/incoming/">
+        Order deny,allow
+        Deny from all
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/error.log
+
+    # Possible values: debug, info, notice, warn, error, crit, alert, emerg.
+    LogLevel warn
+
+    CustomLog ${APACHE_LOG_DIR}/ssl_access.log combined
+
+    SSLEngine on
+    #SSLOptions +FakeBasicAuth +ExportCertData +StrictRequire
+
+{% if "servers-certified" in group_names %}
+    # Using custom server certificates
+    SSLCertificateFile      {{ hm_certified__cert_host_dir }}/cert.pem
+    SSLCertificateKeyFile   {{ hm_certified__cert_host_dir }}/key.pem
+    SSLCertificateChainFile {{ hm_certified__cert_host_dir }}/chain.pem
+{% else %}
+    # Using self-signed server certificates
+    SSLCertificateFile      /etc/ssl/certs/ssl-cert-snakeoil.pem
+    SSLCertificateKeyFile   /etc/ssl/private/ssl-cert-snakeoil.key
+{% endif %}
+
+    <FilesMatch "\.(cgi|shtml|phtml|php)$">
+        SSLOptions +StdEnvVars
+    </FilesMatch>
+    <Directory /usr/lib/cgi-bin>
+        SSLOptions +StdEnvVars
+    </Directory>
+
+    BrowserMatch "MSIE [2-6]" \
+        nokeepalive ssl-unclean-shutdown \
+        downgrade-1.0 force-response-1.0
+    # MSIE 7 and newer should be able to use keepalive
+    BrowserMatch "MSIE [17-9]" ssl-unclean-shutdown
+</VirtualHost>
+</IfModule>

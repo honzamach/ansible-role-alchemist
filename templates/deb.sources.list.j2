@@ -1,0 +1,5 @@
+#
+# Source file for project '{{ project_name }}', codebase '{{ item['codename'] }}'
+#
+
+deb https://{{ ansible_fqdn }}/{{ project_name }}/deb {{ item['codename'] }} {{ item['components']|join(' ') }}

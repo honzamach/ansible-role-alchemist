@@ -1,0 +1,33 @@
+---
+
+- debug:
+    msg: "Managing project {{ project_name }}"
+  tags:
+    - debug
+
+- name: "Managing project directories for {{ project_name }}"
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "2775"
+    state: directory
+
+- name: "Managing project metadata for {{ project_name }}"
+  template:
+    src: project.metadata.json.j2
+    dest: "{{ hm_alchemist__home_projects }}/{{ project_name }}/.metadata.json"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: 0644
+    backup: yes
+
+- include_tasks: _inc.initgitrepo.yml
+
+- include_tasks: _inc.initfilerepo.yml
+
+- include_tasks: _inc.initdocrepo.yml
+  when: "'doc' in project_data['build_modules']"
+
+- include_tasks: _inc.initdebrepo.yml
+  when: "'deb' in project_data['build_modules']"

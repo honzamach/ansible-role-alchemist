@@ -1,0 +1,18 @@
+---
+
+- name: Configuring DOC repositories - managing repository directory
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/doc"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "2775"
+    state: directory
+
+- name: Configuring DOC repositories - managing public repository substructure
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/files/{{ item['codename'] }}"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "2775"
+    state: directory
+  with_items: "{{ project_data['distributions'] }}"

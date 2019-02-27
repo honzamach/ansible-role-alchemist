@@ -1,0 +1,328 @@
+# -*- python -*-
+# ex: set filetype=python:
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+#
+#                             IMPORTANT WARNING
+#
+#  This file is managed remotely by Ansible orchestration tool. Any local
+#  changes will be overwritten without any notice !!! You have been warned !!!
+#
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+
+import sys
+import re
+import json
+import logging
+import buildbot.secrets.providers.file as bspf
+from buildbot.plugins import *
+
+#
+# Setup custom additional logging.
+#
+logging.basicConfig(
+    filename = '/opt/alchemist/var/bb_alchemist.log',
+    level = logging.DEBUG,
+    format = '%(asctime)-15s %(message)s'
+)
+
+
+#
+# Import custom Alchemist framework.
+#
+sys.path.append('/opt/alchemist/lib')
+import bb_alchemist
+bb_alchemist.initialize(
+    '{{ ansible_fqdn }}',
+    '../../proxy_launcher.sh'
+)
+
+
+# This is buildmaster config file. It must be installed as 'master.cfg' in your
+# buildmaster's base directory.
+
+# This is the dictionary that the buildmaster pays attention to. We also use
+# a shorter alias to save typing.
+c = BuildmasterConfig = {}
+
+
+#****** BUILDSYSTEM IDENTITY ***************************************************
+#
+# Doc: https://docs.buildbot.net/current/manual/cfg-global.html#site-definitions
+#
+#*******************************************************************************
+
+
+c['title']       = "{{ hm_alchemist__title }}"
+c['titleURL']    = "https://{{ ansible_fqdn }}/buildbot"
+c['buildbotURL'] = "https://{{ ansible_fqdn }}/buildbot/"
+
+
+#****** WORKERS ****************************************************************
+#
+# The 'workers' list defines the set of recognized workers. Each element is
+# a Worker object, specifying a unique worker name and password. The same
+# worker name and password must be configured on the worker.
+#
+# Doc: https://docs.buildbot.net/current/manual/cfg-workers.html
+#
+#*******************************************************************************
+
+
+c['workers'] = [
+{% for workerid in hm_alchemist__buildbot_workers.keys()|sort %}
+    worker.Worker(
+        "{{ workerid }}",
+        "{{ hm_alchemist__worker_passwd }}",
+        notify_on_missing = ["{{ hm_alchemist__admin_email }}"],
+        missing_timeout = 300
+    ){{ "," if not loop.last else "" }}
+{% endfor %}
+]
+
+# 'protocols' contains information about protocols which buildmaster will use for
+# communicating with workers. You must define at least 'port' option that workers
+# could connect to your master with this protocol. The 'port' must match the
+# value configured into the workers (with their '--master' option)
+
+c['protocols'] = {
+    'pb': {
+        'port': {{ hm_alchemist__worker_port }}
+    }
+}
+
+
+#****** CHANGESOURCES **********************************************************
+#
+# The 'change_source' setting tells the buildmaster how it should find out
+# about source code changes.
+#
+# Doc: https://docs.buildbot.net/current/manual/cfg-changesources.html
+#
+#*******************************************************************************
+
+
+c['change_source'] = []
+c['change_source'].append(changes.PBChangeSource(
+    port   = {{ hm_alchemist__change_port }},
+    user   = '{{ hm_alchemist__change_user }}',
+    passwd = '{{ hm_alchemist__change_passwd }}'
+))
+
+
+#****** PROJECTS ***************************************************************
+#
+# 'projects' is a custom Python dictionary with repository data. Each key at the
+# top refers to each of the software bundles to build under this configuration.
+#
+#*******************************************************************************
+
+#
+# Ansible-generated dictionary containing raw data for all defined projects.
+#
+PROJECTS_RAW = {
+{% for projectid in hm_accounts__users.keys()|sort %}
+{% if 'alchemist_project' in hm_accounts__users[projectid] and hm_accounts__users[projectid]['alchemist_project'] %}
+    '{{ projectid }}': {
+        'name': '{{ projectid }}',
+        'repo_url': 'file://{{ hm_alchemist__home_projects }}/{{ projectid }}/repo.git',
+        'home_dir': '{{ hm_alchemist__home_projects }}/{{ projectid }}',
+        'metadata': {{ hm_accounts__users[projectid]['metadata'] | to_json }},
+        'build_modules': {{ hm_accounts__users[projectid]['build_modules'] | to_json }},
+        'distributions': {{ hm_accounts__users[projectid]['distributions'] | to_json }},
+        'build': {{ hm_accounts__users[projectid]['build'] | to_json }},
+        'subrepos': {% if 'subrepos' in hm_accounts__users[projectid] and hm_accounts__users[projectid]['subrepos'] %}True{% else %}False{% endif %}
+    }{{ "," if not loop.last else "" }}
+{% endif %}
+{% endfor %}
+}
+
+PROJECTS = {}
+for project in PROJECTS_RAW.values():
+    PROJECTS[project['name']] = bb_alchemist.AlchemistProject(**project)
+
+
+#****** SCHEDULERS *************************************************************
+#
+# Doc: https://docs.buildbot.net/current/manual/cfg-schedulers.html
+#
+#*******************************************************************************
+
+c['schedulers'] = []
+
+for project in PROJECTS.values():
+    c['schedulers'].extend(project.gen_sch_checkout())
+    c['schedulers'].extend(project.gen_sch_force())
+    c['schedulers'].extend(project.gen_sch_triggers())
+
+
+#****** BUILDERS ***************************************************************
+#
+# The 'builders' list defines the Builders, which tell Buildbot how to perform
+# a build: what steps, and which workers can execute them. Note that any particular
+# build will only take place on one worker.
+#
+#*******************************************************************************
+
+c['builders'] = []
+
+for project in PROJECTS.values():
+    c['builders'].extend(project.gen_builders())
+
+
+#****** BUILDBOT SERVICES ******************************************************
+#
+# 'services' is a list of BuildbotService items like reporter targets. The
+# status of each build will be pushed to these targets. buildbot/reporters/*.py
+# has a variety to choose from, like IRC bots.
+#
+#*******************************************************************************
+
+
+def generate_service_reporter_mail(cfg, project):
+    """
+    Helper function for generating 'full' build result reporting service for
+    given project to inform additional users or system administrators.
+    """
+    cfg.append(reporters.MailNotifier(
+        fromaddr              = 'alchemist@{{ ansible_fqdn }}',
+        sendToInterestedUsers = False,
+        extraRecipients       = ['project-{}@{{ ansible_fqdn }}'.format(project.name)],
+        mode                  = 'passing',
+        builders              = ['{}-full'.format(project.name)]
+    ))
+
+
+#-------------------------------------------------------------------------------
+
+
+c['services'] = []
+
+# Notify interested users about all builds.
+mn = reporters.MailNotifier(
+        fromaddr              = 'alchemist@{{ ansible_fqdn }}',
+        sendToInterestedUsers = True,
+        mode                  = 'all',
+        lookup                = 'cesnet.cz'
+    )
+c['services'].append(mn)
+
+for project in PROJECTS.values():
+    generate_service_reporter_mail(c['services'], project)
+
+
+#****** GLOBAL SETTINGS AND DEFAULTS AND PROPERTIES ****************************
+
+
+c['collapseRequests']     = True
+c['buildbotNetUsageData'] = 'full'
+
+c['secretsProviders'] = [
+        bspf.SecretInAFile(dirname = '{{ hm_alchemist__home_buildmaster }}/secrets')
+#        bspf.SecretInVault(
+#                vaultToken=open('VAULT_TOKEN').read(),
+#                vaultServer="http://localhost:8200"
+#            )
+    ]
+
+c['properties'] = {
+    'metadata': {
+{% for projectid in hm_accounts__users.keys()|sort %}
+{% if 'alchemist_project' in hm_accounts__users[projectid] and hm_accounts__users[projectid]['alchemist_project'] %}
+        '{{ projectid }}': {
+{% for distro in hm_accounts__users[projectid]['distributions'] %}
+            '{{ distro.branch}}': {
+                'codename': '{{ distro.codename }}',
+                'gpgkey':   '{{ distro.gpg_key }}',
+                'suite':    '{{ distro.suite }}'
+            },
+{% endfor %}
+        },
+{% endif %}
+{% endfor %}
+    },
+
+{% for projectid in hm_accounts__users.keys()|sort %}
+{% if 'alchemist_project' in hm_accounts__users[projectid] and hm_accounts__users[projectid]['alchemist_project'] %}
+{% for distro in hm_accounts__users[projectid]['distributions'] %}
+    'gpgkey_{{ projectid }}_{{ distro.codename}}': '{{ distro.gpg_key }}',
+{% endfor %}
+{% endif %}
+{% endfor %}
+}
+
+
+#****** WEB INTERFACE **********************************************************
+#
+# Doc: https://docs.buildbot.net/current/manual/cfg-www.html
+#
+#*******************************************************************************
+
+
+c['www'] = {
+    'port':    8010,
+    'plugins': dict(waterfall_view = {}, console_view = {}, grid_view = {}),
+#    'auth': util.RemoteUserAuth(),
+#    'authz':   util.Authz(
+#        allowRules=[
+#            util.AnyControlEndpointMatcher(role = "admins"),
+#        ],
+#        roleMatchers=[
+#            util.RolesFromUsername(
+#                roles = ["admins"],
+#                usernames = [
+{% for admin in hm_accounts__admins|sort %}
+{% if 'eppn' in site_users[admin] %}
+#                    "{{ site_users[admin]['eppn'] }}"{{ "," if not loop.last else "" }}
+{% endif %}
+{% endfor %}
+#                ]
+#            )
+#        ]
+#    )
+}
+
+
+#****** DATABASE ***************************************************************
+#
+# Doc: https://docs.buildbot.net/current/manual/cfg-global.html#database-specification
+#
+#*******************************************************************************
+
+
+# This specifies what database buildbot uses to store its state. You can leave
+# this at its default for all but the largest installations.
+c['db'] = {
+    'db_url': "sqlite:///state.sqlite",
+}
+
+
+#****** LOGGING ****************************************************************
+#
+# Doc: https://docs.buildbot.net/current/manual/cfg-global.html#log-handling
+#
+#*******************************************************************************
+
+
+c['logCompressionMethod'] = 'gz'
+c['logMaxSize']           = 1024*1024 # 1M
+c['logMaxTailSize']       = 32768
+c['logEncoding']          = 'utf-8'
+
+
+#****** CACHING ****************************************************************
+#
+# Doc: https://docs.buildbot.net/current/manual/cfg-global.html#data-lifetime
+#
+#*******************************************************************************
+
+
+c['caches'] = {
+    'Changes':       100,
+    'Builds':        500,
+    'chdicts':       100,
+    'BuildRequests':  10,
+    'SourceStamps':   20,
+    'ssdicts':        20,
+    'objectids':      10,
+    'usdicts':       100,
+}

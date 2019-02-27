@@ -1,0 +1,315 @@
+---
+
+- debug: var=hm_accounts__users
+  tags:
+    - debug
+
+- name: Updating Alchemist project configurations
+  set_fact:
+      hm_accounts__users: "{{ hm_accounts__users | combine({item.key: {'name': item.key, 'home_dir': hm_alchemist__home_projects + '/' + item.key, 'repo_url': 'file://' + hm_alchemist__home_projects + '/' + item.key + '/repo.git' } }, recursive=True) }}"
+  with_dict: "{{ hm_accounts__users }} "
+
+- debug: var=hm_accounts__users
+  tags:
+    - debug
+
+- name: Managing Alchemist configuration file
+  template:
+    src: "alchemist.config.json.j2"
+    dest: "/opt/alchemist/etc/config.json"
+    owner: root
+    group: root
+    mode: 0644
+    backup: yes
+
+- name: Managing work directory for buildbot master
+  file:
+    path: "{{ hm_alchemist__home_buildmaster }}"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0755
+    state: directory
+
+- name: Managing secret directory for buildbot master
+  file:
+    path: "{{ hm_alchemist__home_buildmaster }}/secrets"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0500
+    state: directory
+
+- name: Managing secret directory contents for buildbot master
+  template:
+    src: "pypi_account.j2"
+    dest: "{{ hm_alchemist__home_buildmaster }}/secrets/pypi_{{ item.key }}"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0400
+  with_dict: "{{ pypi_accounts }}"
+
+- name: Managing try directories for buildbot master and all projects
+  file:
+    path: "{{ hm_alchemist__home_buildmaster }}/tryjobs-{{ item }}"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0775
+    state: directory
+  with_items: "{{ hm_accounts__users.keys() | sort }}"
+
+- name: Managing try subdirectories for buildbot master and all projects
+  file:
+    path: "{{ hm_alchemist__home_buildmaster }}/tryjobs-{{ item[0] }}/{{ item[1] }}"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0775
+    state: directory
+  with_nested:
+    - "{{ hm_accounts__users.keys() | sort }}"
+    - ["new", "cur", "tmp"]
+
+- name: Creating buildbot master
+  shell: "buildbot create-master -r {{ hm_alchemist__home_buildmaster }}"
+  args:
+    executable: /bin/bash
+    creates: "{{ hm_alchemist__home_buildmaster }}/buildbot.tac"
+
+- name: Managing ownership of buildbot master files
+  file:
+    path: "{{ hm_alchemist__home_buildmaster }}/{{ item }}"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0644
+  with_items:
+    - "buildbot.tac"
+
+- name: Configuring buildbot master
+  template:
+    src: "{{ item }}"
+    dest: "{{ hm_alchemist__home_buildmaster }}/master.cfg"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0644
+    backup: yes
+  with_first_found:
+    - "host_files/{{ inventory_hostname }}/master.cfg.j2"
+    - "group_files/servers-production/master.cfg.{{ ansible_lsb['codename'] }}.j2"
+    - "group_files/servers-production/master.cfg.j2"
+    - "group_files/servers-development/master.cfg.{{ ansible_lsb['codename'] }}.j2"
+    - "group_files/servers-development/master.cfg.j2"
+    - "group_files/servers-demo/master.cfg.{{ ansible_lsb['codename'] }}.j2"
+    - "group_files/servers-demo/master.cfg.j2"
+    - "group_files/servers/master.cfg.{{ ansible_lsb['codename'] }}.j2"
+    - "group_files/servers/master.cfg.j2"
+    - "master.cfg.{{ ansible_lsb['codename'] }}.j2"
+    - "master.cfg.j2"
+  notify:
+    - Restart buildmaster service
+    - Restart buildbot-worker service
+
+- name: Configuring buildbot master defaults
+  template:
+    src: "etc.default.buildmaster.j2"
+    dest: "/etc/default/buildmaster"
+    owner: root
+    group: root
+    mode: 0644
+    backup: yes
+  notify:
+    - Restart buildmaster service
+    - Restart buildbot-worker service
+
+- name: Configuring buildbot master init file
+  copy:
+    src: "etc.initd.buildmaster"
+    dest: "/etc/init.d/buildmaster"
+    owner: root
+    group: root
+    mode: 0755
+
+#-------------------------------------------------------------------------------
+
+- name: Managing work directories for all buildbot workers
+  file:
+    path: "{{ hm_alchemist__home_buildworkers }}/{{ item }}"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0755
+    state: directory
+  with_items: "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
+
+- name: Managing work subdirectories for all buildbot workers
+  file:
+    path: "{{ hm_alchemist__home_buildworkers }}/{{ item[0] }}/{{ item[1] }}"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0755
+    state: directory
+  with_nested:
+    - "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
+    - ["info"]
+
+- name: Creating the initial virtualenv for buildbot workers
+  shell: "virtualenv -p {{ hm_alchemist__buildbot_workers[item]['python'] }} {{ hm_alchemist__home_buildworkers }}/{{ item }}/venv"
+  args:
+    creates: "{{ hm_alchemist__home_buildworkers }}/{{ item }}/venv"
+  become: true
+  become_user: "{{ hm_alchemist__account_buildbot }}"
+  with_items: "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
+
+- include: _inc.initvenv.yml
+  vars:
+    worker: "{{ outer_item }}"
+    ri_venv_packages: "{{ hm_alchemist__buildbot_workers[outer_item]['pip'] }}"
+  with_list: "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
+  loop_control:
+    loop_var: outer_item
+
+- name: Creating all buildbot workers
+  shell: "buildbot-worker create-worker --umask=022 {{ hm_alchemist__home_buildworkers }}/{{ item }} localhost:{{ hm_alchemist__worker_port }} {{ item }} {{ hm_alchemist__worker_passwd }}"
+  args:
+    executable: /bin/bash
+    creates: "{{ hm_alchemist__home_buildworkers }}/{{ item }}/buildbot.tac"
+  with_items: "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
+
+- name: Managing ownership of all buildbot workers files
+  file:
+    path: "{{ hm_alchemist__home_buildworkers }}/{{ item[0] }}/{{ item[1] }}"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0644
+  with_nested:
+    - "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
+    - ["buildbot.tac"]
+
+- name: Configuring buildbot worker defaults
+  template:
+    src: "etc.default.buildbot-worker.j2"
+    dest: "/etc/default/buildbot-worker"
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - Restart buildbot-worker service
+
+- name: Configuring buildbot worker init file
+  copy:
+    src: "etc.initd.buildbot-worker"
+    dest: "/etc/init.d/buildbot-worker"
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Managing proxy launcher script
+  template:
+    src: "proxy_launcher.sh.j2"
+    dest: "{{ hm_alchemist__home_buildworkers }}/{{ item }}/proxy_launcher.sh"
+    owner: root
+    group: root
+    mode: 0755
+  with_items: "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
+
+- name: Configuring buildbot worker admin details
+  template:
+    src: "buildbot.info.admin.j2"
+    dest: "{{ hm_alchemist__home_buildworkers }}/{{ item }}/info/admin"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0644
+  with_items: "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
+
+- name: Configuring buildbot worker host details
+  shell: "{{ hm_alchemist__home_buildworkers }}/{{ item }}/proxy_launcher.sh python -V &>{{ hm_alchemist__home_buildworkers }}/{{ item }}/info/host && uname -o >> {{ hm_alchemist__home_buildworkers }}/{{ item }}/info/host && uname -r >> {{ hm_alchemist__home_buildworkers }}/{{ item }}/info/host && uname -m >> {{ hm_alchemist__home_buildworkers }}/{{ item }}/info/host"
+  args:
+    creates: "{{ hm_alchemist__home_buildworkers }}/{{ item }}/info/host"
+  become: true
+  become_user: "{{ hm_alchemist__account_buildbot }}"
+  with_items: "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
+
+#-------------------------------------------------------------------------------
+
+- include_tasks: _func.manage_project.yml
+  vars:
+    project_name: "{{ outer_item.key }}"
+    project_data: "{{ outer_item.value }}"
+  with_dict: "{{ hm_accounts__users }}"
+  loop_control:
+    loop_var: outer_item
+    label: "Managing project {{ outer_item.key }}"
+  when: "'alchemist_project' in hm_accounts__users[outer_item.key] and hm_accounts__users[outer_item.key]['alchemist_project']"
+
+#-------------------------------------------------------------------------------
+
+- name: Enabling necessary Apache modules
+  apache2_module:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - rewrite
+    - ssl
+    - cgid
+    - wsgi
+    - headers
+    - proxy
+    - proxy_http
+    - proxy_wstunnel
+  notify: Restart Apache service
+
+- meta: flush_handlers
+
+- name: Removing default Apache sites
+  file:
+    path: "{{ item }}"
+    state: absent
+  with_items:
+    - /etc/apache2/sites-enabled/000-default.conf
+  notify: Restart Apache service
+
+- name: Configuring custom Alchemist sites for Apache2 - redirection site
+  template:
+    src: "{{ item }}"
+    dest: "/etc/apache2/sites-available/site_alchemist_redirect.conf"
+    owner: root
+    group: root
+    mode: 0644
+    backup: yes
+  with_first_found:
+    - "host_files/{{ inventory_hostname }}/apache2_site_alchemist_redirect.conf.{{ ansible_distribution_release }}.j2"
+    - "host_files/{{ inventory_hostname }}/apache2_site_alchemist_redirect.conf.j2"
+    - "group_files/servers/apache2_site_alchemist_redirect.conf.{{ ansible_distribution_release }}.j2"
+    - "group_files/servers/apache2_site_alchemist_redirect.conf.j2"
+    - "apache2_site_alchemist_redirect.conf.{{ ansible_distribution_release }}.j2"
+    - "apache2_site_alchemist_redirect.conf.j2"
+  notify: Restart Apache service
+
+- name: Configuring custom Alchemist sites for Apache2 - master site
+  template:
+    src: "{{ item }}"
+    dest: "/etc/apache2/sites-available/site_alchemist.conf"
+    owner: root
+    group: root
+    mode: 0644
+    backup: yes
+  with_first_found:
+    - "host_files/{{ inventory_hostname }}/apache2_site_alchemist.conf.{{ ansible_distribution_release }}.j2"
+    - "host_files/{{ inventory_hostname }}/apache2_site_alchemist.conf.j2"
+    - "group_files/servers/apache2_site_alchemist.conf.{{ ansible_distribution_release }}.j2"
+    - "group_files/servers/apache2_site_alchemist.conf.j2"
+    - "apache2_site_alchemist.conf.{{ ansible_distribution_release }}.j2"
+    - "apache2_site_alchemist.conf.j2"
+  notify: Restart Apache service
+
+- name: Enabling custom Alchemist sites for Apache2
+  file:
+    src: "/etc/apache2/sites-available/{{ item }}"
+    dest: "/etc/apache2/sites-enabled/{{ item }}"
+    state: link
+  with_items:
+    - site_alchemist_redirect.conf
+    - site_alchemist.conf
+  notify: Restart Apache service
+
+- name: Ensuring Apache service is running and enabled at system start.
+  service:
+    name: "{{ hm_alchemist__apache_service_name }}"
+    state: started
+    enabled: yes

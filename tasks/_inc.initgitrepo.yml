@@ -1,0 +1,40 @@
+---
+
+- name: Configuring GIT repositories - managing repository directory
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/repo.git"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "2775"
+    state: directory
+
+- name: Configuring GIT repositories - managing repository substructure
+  shell: /usr/bin/git init --bare --shared "{{ hm_alchemist__home_projects }}/{{ project_name }}/repo.git"
+  args:
+    creates: "{{ hm_alchemist__home_projects }}/{{ project_name }}/repo.git/HEAD"
+
+- name: Configuring GIT repositories - managing post-receive hook
+  template:
+    src: post-receive.j2
+    dest: "{{ hm_alchemist__home_projects }}/{{ project_name }}/repo.git/hooks/post-receive"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "4775"
+    backup: yes
+
+- name: Configuring GIT repositories - managing git_buildbot.py script
+  template:
+    src: git_buildbot.py.j2
+    dest: "{{ hm_alchemist__home_projects }}/{{ project_name }}/repo.git/hooks/git_buildbot.py"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    mode: "4775"
+    backup: yes
+
+- name: Configuring GIT repositories - ensuring correct ownerwhips and permissions for repository contents
+  file:
+    path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/repo.git"
+    owner: "{{ project_name }}"
+    group: "{{ project_name }}"
+    state: directory
+    recurse: yes

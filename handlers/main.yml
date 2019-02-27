@@ -1,0 +1,16 @@
+---
+
+- name: Restart Apache service
+  service:
+    name: "{{ hm_alchemist__apache_service_name }}"
+    state: restarted
+
+- name: Restart buildmaster service
+  service:
+    name: buildmaster
+    state: restarted
+
+- name: Restart buildbot-worker service
+  service:
+    name: buildbot-worker
+    state: restarted

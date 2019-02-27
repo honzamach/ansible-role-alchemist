@@ -1,0 +1,29 @@
+#!/bin/bash
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+#
+#                             IMPORTANT WARNING
+#
+#  This file is managed remotely by Ansible orchestration tool. Any local
+#  changes will be overwritten without any notice !!! You have been warned !!!
+#
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+
+# Debuging information
+echo Post-receive hook running: wai=`whoami` uid=$UID euid=$EUID pwd=`pwd` args=$@
+
+# Update repository server info
+git update-server-info
+
+# Make sure the repository contents will always have correct permissions
+#/bin/chown -R {{ project_name }}:{{ project_name }} /var/projects/{{ project_name }}/repo.git
+
+# Call BuildBot post-receive hook script
+# https://github.com/buildbot/buildbot-contrib/blob/master/master/contrib/git_buildbot.py
+while read oldrev newrev refname
+do
+    echo "Received changes: '$oldrev $newrev $refname'"
+    echo $oldrev $newrev $refname | /var/projects/{{ project_name }}/repo.git/hooks/git_buildbot.py --verbose --project {{ project_name }} --repository file:///var/projects/{{ project_name }}/repo.git --logfile /var/tmp/git_buildbot_{{ project_name }}.log
+done
+
+# Or perhaps send all changes in bulk by redirecting stdin directly to buildbot hook
+#/var/projects/{{ project_name }}/repo.git/hooks/git_buildbot.py --verbose --project {{ project_name }} --repository file:///var/projects/{{ project_name }}/repo.git --logfile /var/tmp/git_buildbot_{{ project_name }}.log <&0

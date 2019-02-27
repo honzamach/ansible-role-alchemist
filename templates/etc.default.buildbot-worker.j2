@@ -1,0 +1,31 @@
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+#
+#                             IMPORTANT WARNING
+#
+#  This file is managed remotely by Ansible orchestration tool. Any local
+#  changes will be overwritten without any notice !!! You have been warned !!!
+#
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+
+WORKER_RUNNER=/usr/local/bin/buildbot-worker
+
+# Example configuration.
+WORKER_ENABLED[1]=0                  # 1-enabled, 0-disabled
+WORKER_NAME[1]="buildbot-worker #1"  # short name printed on start/stop
+WORKER_USER[1]="buildbot"            # user to run worker as
+WORKER_BASEDIR[1]=""                 # basedir to worker (absolute path)
+WORKER_OPTIONS[1]=""                 # buildbot options
+WORKER_PREFIXCMD[1]=""               # prefix command, i.e. nice, linux32, dchroot
+
+WORKERBASE="{{ hm_alchemist__home_buildworkers }}"
+
+{% for worker_name in hm_alchemist__buildbot_workers.keys() | sort %}
+# Worker {{ loop.index }}
+WORKER_ENABLED[{{ loop.index }}]=1
+WORKER_NAME[{{ loop.index }}]="buildbot-worker #{{ loop.index }} {{ worker_name }}"
+WORKER_USER[{{ loop.index }}]="{{ hm_alchemist__account_buildbot }}"
+WORKER_BASEDIR[{{ loop.index }}]="${WORKERBASE}/{{ worker_name }}"
+WORKER_OPTIONS[{{ loop.index }}]=""
+WORKER_PREFIXCMD[{{ loop.index }}]=""
+
+{% endfor %}

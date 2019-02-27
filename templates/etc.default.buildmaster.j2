@@ -1,0 +1,28 @@
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+#
+#                             IMPORTANT WARNING
+#
+#  This file is managed remotely by Ansible orchestration tool. Any local
+#  changes will be overwritten without any notice !!! You have been warned !!!
+#
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+
+MASTER_RUNNER=/usr/local/bin/buildbot
+
+# 1-enabled, 0-disabled
+MASTER_ENABLED[1]=1
+
+# Short name printed on start/stop.
+MASTER_NAME[1]="buildmaster"
+
+# User to run master as.
+MASTER_USER[1]="{{ hm_alchemist__account_buildbot }}"
+
+# Basedir to master (absolute path)
+MASTER_BASEDIR[1]="{{ hm_alchemist__home_buildmaster }}"
+
+# Additional buildbot options.
+MASTER_OPTIONS[1]=""
+
+# Prefix command, i.e. nice, linux32, dchroot.
+MASTER_PREFIXCMD[1]=""

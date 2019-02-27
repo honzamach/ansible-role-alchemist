@@ -1,0 +1,202 @@
+---
+
+- name: Installing APT repository GPG key for Yarn
+  apt_key:
+    url: https://dl.yarnpkg.com/debian/pubkey.gpg
+    state: present
+
+- name: Adding Yarn APT repository
+  apt_repository:
+    repo: "deb https://dl.yarnpkg.com/debian/ stable main"
+    state: present
+    filename: yarn
+    update_cache: yes
+
+- name: Installing NodeJS repository GPG key for Yarn
+  apt_key:
+    url: https://deb.nodesource.com/gpgkey/nodesource.gpg.key
+    state: present
+
+- name: Adding NodeJS APT repository
+  apt_repository:
+    repo: "deb https://deb.nodesource.com/node_8.x {{ ansible_lsb['codename'] }} main"
+    state: present
+    filename: nodesource
+    update_cache: yes
+
+- name: Adding NodeJS source APT repository
+  apt_repository:
+    repo: "deb-src https://deb.nodesource.com/node_8.x {{ ansible_lsb['codename'] }} main"
+    state: present
+    filename: nodesource-src
+    update_cache: yes
+
+- name: Installing essential packages
+  apt:
+    name: "{{ hm_alchemist__deb_install_packages }} "
+    state: latest
+
+- name: Removing native system PIP packages
+  apt:
+    name: "{{ item }}"
+    state: absent
+  with_items:
+    - python-pip
+    - python3-pip
+
+- name: Fetching latest version of PIP installation script
+  get_url:
+    url: https://bootstrap.pypa.io/get-pip.py
+    dest: /root/get-pip.py
+    mode: 0644
+
+- name: Installing latest version of PIP
+  command: "python /root/get-pip.py"
+  args:
+    creates: /usr/local/bin/pip2
+
+- name: Installing latest version of PIP3
+  command: "python /root/get-pip.py"
+  args:
+    creates: /usr/local/bin/pip3
+
+- name: Installing required system-wide Python3 modules
+  pip:
+    name: "{{ item }}"
+    executable: pip3
+    state: latest
+  with_items:
+    - twine
+    - jinja2
+    - babel
+    - flask
+    - setuptools
+    - virtualenv
+    - virtualenvwrapper
+    - buildbot
+    - buildbot-www
+    - buildbot-console-view
+    - buildbot-grid-view
+    - buildbot-waterfall-view
+    - buildbot-worker
+
+- name: Installing required system-wide Python modules
+  pip:
+    name: "{{ item }}"
+    executable: pip2
+    state: latest
+  with_items:
+    - twine
+    - jinja2
+    - babel
+    - flask
+    - setuptools
+    - virtualenv
+    - virtualenvwrapper
+    - buildbot
+    - buildbot-www
+    - buildbot-console-view
+    - buildbot-grid-view
+    - buildbot-waterfall-view
+    - buildbot-worker
+
+- name: Installing Grunt automation tool
+  shell: npm install grunt-cli -g
+  args:
+    chdir: /tmp
+    creates: /usr/local/bin/grunt
+
+#-------------------------------------------------------------------------------
+
+- name: Creating buildbot local user account
+  user:
+    name: "{{ hm_alchemist__account_buildbot }}"
+    shell: /bin/bash
+
+- name: Adding buildbot local user account into shared local user account groups
+  user:
+    name: "{{ hm_alchemist__account_buildbot }}"
+    groups: "{{ hm_accounts__users.keys()|join(',') }}"
+    append: yes
+
+- name: Installing Alchemist directories
+  file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: 0755
+    state: directory
+  with_items:
+    - /opt/alchemist
+    - /opt/alchemist/lib
+    - /opt/alchemist/bin
+    - /opt/alchemist/etc
+    - /opt/alchemist/etc/templates
+
+- name: Installing Alchemist variable directories
+  file:
+    path: "{{ item }}"
+    owner: "{{ hm_alchemist__account_buildbot }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
+    mode: 0755
+    state: directory
+  with_items:
+    - /opt/alchemist/var
+
+- name: Installing Alchemist files
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  with_items:
+    - {"src": "alchemist.py",         "dest": "/opt/alchemist/lib/alchemist.py",         "mode": "0644"}
+    - {"src": "bb_alchemist.py",      "dest": "/opt/alchemist/lib/bb_alchemist.py",      "mode": "0644"}
+    - {"src": "test_bb_alchemist.py", "dest": "/opt/alchemist/lib/test_bb_alchemist.py", "mode": "0644"}
+  notify:
+    - Restart Apache service
+    - Restart buildmaster service
+
+- name: Installing Alchemist utilities
+  copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  with_items:
+    - {"src": "alchemist.wsgi",  "dest": "/opt/alchemist/bin/alchemist.wsgi",  "mode": "0755"}
+    - {"src": "buildlogger.py",  "dest": "/opt/alchemist/bin/buildlogger.py",  "mode": "0755"}
+    - {"src": "envstats.py",     "dest": "/opt/alchemist/bin/envstats.py",     "mode": "0755"}
+    - {"src": "projectstats.py", "dest": "/opt/alchemist/bin/projectstats.py", "mode": "0755"}
+    - {"src": "signer.py",       "dest": "/opt/alchemist/bin/signer.py",       "mode": "0755"}
+    - {"src": "templater.py",    "dest": "/opt/alchemist/bin/templater.py",    "mode": "0755"}
+
+- name: Managing custom worker templates
+  copy:
+    src: "templater_templates/"
+    dest: "/opt/alchemist/etc/templates/"
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Managing web interface page templates
+  copy:
+    src: "templates/"
+    dest: "/opt/alchemist/lib/templates/"
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - Restart Apache service
+
+- name: Managing web interface static files
+  copy:
+    src: "static/"
+    dest: "/opt/alchemist/lib/static/"
+    owner: root
+    group: root
+    mode: 0644
+  notify:
+    - Restart Apache service

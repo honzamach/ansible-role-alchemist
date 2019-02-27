@@ -1,0 +1,8 @@
+#!/bin/bash
+#
+# Utility instalation script for project '{{ project_name }}', codebase '{{ item['codename'] }}'
+#
+
+wget -O /etc/apt/sources.list.d/{{ project_name }}-{{ item['codename'] }}.list https://{{ ansible_fqdn }}/{{ project_name }}/deb/{{ project_name }}-{{ item['codename'] }}.list
+wget -O - https://{{ ansible_fqdn }}/{{ project_name }}/deb/{{ project_name }}-{{ item['codename'] }}.gpg | apt-key add -
+apt-get update

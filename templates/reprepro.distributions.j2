@@ -1,0 +1,11 @@
+{% for distro in project_data['distributions'] %}
+Origin: {{ distro['label']|default('Project name') }}
+Label: {{ distro['origin']|default('Project name') }}
+Suite: {{ distro['suite']|default('stable') }}
+Codename: {{ distro['codename']|default('production') }}
+Architectures: {{ distro['architectures']|join(' ') }}
+Components: {{ distro['components']|join(' ') }}
+Description: {{ distro['description']|default('APT repository for project') }}
+SignWith: {{ distro['gpg_key'] }}
+
+{% endfor %}

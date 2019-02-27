@@ -1,0 +1,20 @@
+#!/bin/bash
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+#
+#                             IMPORTANT WARNING
+#
+#  This file is managed remotely by Ansible orchestration tool. Any local
+#  changes will be overwritten without any notice !!! You have been warned !!!
+#
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+
+#
+# This script activates Python virtual environment for appropriate buildbot
+# worker and then executes given command.
+#
+
+# Debuging information
+#echo Running: wai=`whoami` uid=$UID euid=$EUID pwd=`pwd` args=$@
+
+# Source the virtual environment and launch script
+source /home/buildbot/workers/{{ item }}/venv/bin/activate && $@

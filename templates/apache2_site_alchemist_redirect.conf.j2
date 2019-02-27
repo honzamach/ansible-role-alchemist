@@ -1,0 +1,26 @@
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+#
+#                             IMPORTANT WARNING
+#
+#  This file is managed remotely by Ansible orchestration tool. Any local
+#  changes will be overwritten without any notice !!! You have been warned !!!
+#
+#----------------------- <+++ansible-managed-file+++> -------------------------+
+
+<VirtualHost *:80>
+    ServerAdmin webmaster@{{ ansible_fqdn }}
+    ServerName {{ ansible_fqdn }}
+
+    DocumentRoot /var/www/
+
+    # Redirection to the secured Alchemist web interface
+    <Location />
+            RewriteEngine On
+            RewriteRule (.*) https://%{HTTP_HOST}%{REQUEST_URI}
+            Require all granted
+    </Location>
+
+    ErrorLog /var/log/apache2/error.log
+    LogLevel warn
+    CustomLog /var/log/apache2/access.log combined
+</VirtualHost>

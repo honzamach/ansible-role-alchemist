@@ -1,0 +1,22 @@
+{
+    "server_fqdn": "{{ ansible_fqdn }}",
+    "server_url": "https://{{ ansible_fqdn }}",
+    "projects_path": "{{ hm_alchemist__home_projects }}",
+    "developers": [
+{% for admin in hm_accounts__admins|sort %}
+{% if 'workstations' in site_users[admin] %}
+{% set outer_loop = loop %}
+{% for key in site_users[admin]['workstations'] %}
+        "{{ key }}"{{ "" if loop.last and outer_loop.last else "," }}
+{% endfor %}
+{% endif %}
+{% endfor %}
+    ],
+    "projects": {
+{% for projectid in hm_accounts__users.keys()|sort %}
+{% if 'alchemist_project' in hm_accounts__users[projectid] and hm_accounts__users[projectid]['alchemist_project'] %}
+    	"{{ projectid }}": {{ hm_accounts__users[projectid] | to_nice_json | indent(width=8, blank=True) }}{{ "," if not loop.last else "" }}
+{% endif %}
+{% endfor %}
+    }
+}
