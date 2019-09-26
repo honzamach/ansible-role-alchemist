@@ -5,7 +5,7 @@
 # playbook file must match the name of GitHub repository.
 #
 
-- hosts: servers-alchemist
+- hosts: servers_alchemist
   remote_user: root
   roles:
     - role: ansible-role-alchemist

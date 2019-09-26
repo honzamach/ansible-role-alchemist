@@ -118,12 +118,12 @@ Example Playbook
 
 Example content of inventory file ``inventory``::
 
-    [servers-alchemist]
+    [servers_alchemist]
     localhost
 
 Example content of role playbook file ``playbook.yml``::
 
-    - hosts: servers-alchemist
+    - hosts: servers_alchemist
       remote_user: root
       roles:
         - role: honzamach.alchemist
