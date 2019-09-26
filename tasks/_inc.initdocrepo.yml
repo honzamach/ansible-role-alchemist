@@ -4,7 +4,7 @@
   file:
     path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/doc"
     owner: "{{ project_name }}"
-    group: "{{ project_name }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
     mode: "2775"
     state: directory
 
@@ -12,7 +12,7 @@
   file:
     path: "{{ hm_alchemist__home_projects }}/{{ project_name }}/files/{{ item['codename'] }}"
     owner: "{{ project_name }}"
-    group: "{{ project_name }}"
+    group: "{{ hm_alchemist__account_buildbot }}"
     mode: "2775"
     state: directory
   with_items: "{{ project_data['distributions'] }}"

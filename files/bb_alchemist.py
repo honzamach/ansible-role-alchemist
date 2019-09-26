@@ -13,13 +13,14 @@
 __author__  = 'Jan Mach <honza.mach.ml@gmail.com>'
 
 
+import os
 import re
 import json
 import weakref
 import logging
 from past.builtins import basestring
 
-from buildbot.plugins import steps, schedulers, util
+from buildbot.plugins import worker, steps, schedulers, util
 
 LOGGER = logging.getLogger('bb_alchemist')
 
@@ -27,37 +28,69 @@ LOGGER = logging.getLogger('bb_alchemist')
 # Custom global constants.
 #
 PATH_PROXY_LAUNCHER = None
+PATH_PROXY_CHROOT   = None
 FQDN_MASTER_SERVER  = None
+WORKER_DIR          = None
+CHROOT_DIR          = None
+
+WORKERS  = None
+PROJECTS = None
 
 
-def initialize(master_server, proxy_launcher):
+def initialize(master_server, proxy_launcher, proxy_chroot, worker_dir, chroot_dir):
     """
     This method must be called before using the library to properly initialize
     important internal configurations.
     """
-    global FQDN_MASTER_SERVER, PATH_PROXY_LAUNCHER  # pylint: disable=locally-disabled,global-statement
+    global FQDN_MASTER_SERVER, PATH_PROXY_LAUNCHER, PATH_PROXY_CHROOT, WORKER_DIR, CHROOT_DIR  # pylint: disable=locally-disabled,global-statement
     FQDN_MASTER_SERVER  = master_server
     PATH_PROXY_LAUNCHER = proxy_launcher
+    PATH_PROXY_CHROOT   = proxy_chroot
+    WORKER_DIR          = worker_dir
+    CHROOT_DIR          = chroot_dir
 
 
-def load_projects(config_file):
+def setup_workers(config):
     """
-    This function loads Alchemist configuration from given configuration file and
-    returns dictionary containing all Alchemist projects.
+    Setup Alchemist worker objects according to the given configuration.
     """
-    with open(config_file, 'r') as fhnd:
-        config = json.load(fhnd)
+    global WORKERS  # pylint: disable=locally-disabled,global-statement
+    WORKERS = {}
+    for worker_name, worker_cfg in config.items():
+        WORKERS[worker_name] = AlchemistWorker(**worker_cfg)
+    return WORKERS
 
-        result = {}
-        for project in config['projects']:
-            result[config['projects'][project]['name']] = AlchemistProject(**config['projects'][project])
-        return result
+
+def get_workers():
+    """
+    Get dictionary of all currently set up Alchemist worker objects.
+    """
+    global WORKERS  # pylint: disable=locally-disabled,global-statement
+    return WORKERS
+
+
+def setup_projects(config):
+    """
+    Setup Alchemist project objects according to the given configuration.
+    """
+    global PROJECTS  # pylint: disable=locally-disabled,global-statement
+    PROJECTS = {}
+    for project_name, project_cfg in config.items():
+        PROJECTS[project_name] = AlchemistProject(**project_cfg)
+    return PROJECTS
+
+def get_projects():
+    """
+    Get dictionary of all currently set up Alchemist project objects.
+    """
+    global PROJECTS  # pylint: disable=locally-disabled,global-statement
+    return PROJECTS
 
 
 #===============================================================================
 
 
-def is_important_always(change):
+def is_important_always(change):  # pylint: disable=locally-disabled,unused-argument
     """
     Dummy callback that deems all code changes important.
     """
@@ -98,6 +131,18 @@ def cb_any_detect_version(rc, stdout, stderr):
         val = mtch.group(1)
     return { 'build_version': val }
 
+def cb_any_detect_whl(rc, stdout, stderr):
+    """
+    Callback for analyzing stdout output of the command and detecting version
+    string.
+    """
+    val = 'unknown'
+    mtch = re.match(r'^\s*(?:\./)?([-_0-9a-zA-Z]+)\s*$', stdout)
+    if mtch:
+        val = mtch.group(1)
+    val = re.sub(r"[-_.]+", "-", val).lower()
+    return { 'package_whl': val }
+
 def cb_detect_production(step):
     """
     Detection of production level build.
@@ -118,15 +163,53 @@ def cb_detect_notproduction(step):
 #===============================================================================
 
 
+class AlchemistWorker(object):
+    """
+    Object representation of Alchemist pre-build setup.
+    """
+    def __init__(self, name, chroot, setup = None, properties = None):
+        self.name   = name
+        self.chroot = chroot
+        self.setup  = setup
+        self.props  = properties or {}
+
+    def __repr__(self):
+        return 'AlchemistWorker(%s,%s)' % (self.name, self.chroot)
+
+    def generate_worker(self, password, admin_email):
+        """
+        Generate buildbot configuration for this worker.
+        """
+        tmp =  worker.Worker(
+            self.name,
+            password,
+            notify_on_missing = [admin_email],
+            missing_timeout = 300,
+            properties = self.props
+        )
+        LOGGER.info(
+            "Generated WORKER '%s' based on chroot '%s'",
+            self.name,
+            self.chroot
+        )
+        return tmp
+
+
+#===============================================================================
+
+
 class AlchemistBuildModule(object):
     """
     Base class for all Alchemist build modules.
     """
-    def __init__(self, project, name, mtype, workers):
+    BUILDDIR = 'build'
+
+    def __init__(self, project, name, mtype, workername, properties = None):
         self.project = weakref.ref(project)
+        self.worker  = weakref.ref(WORKERS[workername])
         self.name    = name
         self.mtype   = mtype
-        self.workers = workers
+        self.props   = properties or {}
 
     def __str__(self):
         return self.name
@@ -136,185 +219,250 @@ class AlchemistBuildModule(object):
 
     #---------------------------------------------------------------------------
 
-    def _gen_step_git(self):
+    def _get_chrooted_cmdlist(self, command_list):
+        return [
+            PATH_PROXY_CHROOT,
+            util.Interpolate('%(prop:builddir)s/build'),
+            '"{}"'.format(' '.join(command_list))
+        ]
+
+    def _gen_steps_chroot_init(self):
+        """
+        Build step factory: Generate build chroot initialization step.
+        """
+        return [
+            steps.RemoveDirectory(
+                name            = 'removing chroot',
+                description     = 'removing chroot',
+                descriptionDone = 'removed chroot',
+                dir             = 'build',
+                haltOnFailure   = False,
+                flunkOnFailure  = False
+            ),
+            steps.ShellCommand(
+                name            = 'initializing chroot',
+                description     = 'initializing chroot',
+                descriptionDone = 'initialized chroot',
+                command         = [
+                    'cp',
+                    '-r',
+                    os.path.join(CHROOT_DIR, self.worker().chroot),
+                    util.Interpolate('%(prop:builddir)s/build')
+                ],
+                haltOnFailure   = True
+            ),
+            steps.MakeDirectory(
+                name            = 'creating builddir',
+                description     = 'creating builddir',
+                descriptionDone = 'created builddir',
+                dir             = self.BUILDDIR,
+                haltOnFailure   = True
+            ),
+        ]
+
+    def _gen_steps_git(self):
         """
         Build step factory: Fetch latest codebase from Git repository.
         """
-        return steps.Git(
-            name            = 'fetching codebase',
-            description     = 'fetching codebase',
-            descriptionDone = 'fetched codebase',
-            repourl         = self.project().repo_url,
-            mode            = 'full',
-            submodules      = self.project().subrepos,
-            haltOnFailure   = True
-        )
+        return [
+            steps.Git(
+                name            = 'fetching codebase',
+                description     = 'fetching codebase',
+                descriptionDone = 'fetched codebase',
+                repourl         = self.project().repo_url,
+                mode            = 'full',
+                submodules      = self.project().subrepos,
+                haltOnFailure   = True
+            )
+        ]
 
-    def _gen_step_set_build_props(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_set_build_props(self):  # pylint: disable=locally-disabled,no-self-use
         """
         Build step factory: Set additional dependent build properties for any project.
         """
-        return steps.SetProperties(
-            name            = 'setting build properties',
-            description     = 'setting build properties',
-            descriptionDone = 'set build properties',
-            properties      = cb_any_compute_properties
-        )
+        return [
+            steps.SetProperties(
+                name            = 'setting build properties',
+                description     = 'setting build properties',
+                descriptionDone = 'set build properties',
+                properties      = cb_any_compute_properties
+            )
+        ]
 
-    def _gen_step_detect_version(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_detect_version(self):  # pylint: disable=locally-disabled,no-self-use
         """
         Build step factory: Detect name of the generated package.
         """
-        return steps.SetPropertyFromCommand(
-            name            = 'detecting version',
-            description     = 'detecting package version',
-            descriptionDone = 'detected version',
-            command         = ['make', 'show-version'],
-            extract_fn      = cb_any_detect_version,
-            workdir         = 'build',
-            haltOnFailure   = True
-        )
+        return [
+            steps.SetPropertyFromCommand(
+                name            = 'detecting version',
+                description     = 'detecting package version',
+                descriptionDone = 'detected version',
+                command         = [PATH_PROXY_LAUNCHER, 'make', 'show-version'],
+                extract_fn      = cb_any_detect_version,
+                workdir         = self.BUILDDIR,
+                haltOnFailure   = True
+            )
+        ]
 
-    def _gen_step_tree_size(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_tree_size(self):  # pylint: disable=locally-disabled,no-self-use
         """
         Build step factory: Calculate the size of project code tree.
         """
-        return steps.TreeSize(
-            name            = 'calculating size',
-            description     = 'calculating codebase size',
-            descriptionDone = 'calculated size',
-            workdir         = 'build',
-            haltOnFailure   = True
-        )
+        return [
+            steps.TreeSize(
+                name            = 'calculating size',
+                description     = 'calculating codebase size',
+                descriptionDone = 'calculated size',
+                workdir         = self.BUILDDIR,
+                haltOnFailure   = True
+            )
+        ]
 
-    def _gen_step_envstats_gen(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_envstats_gen(self):  # pylint: disable=locally-disabled,no-self-use
         """
         Build step factory: Generate build environment statistics.
         """
-        return steps.ShellCommand(
-            name            = 'generating envstats',
-            description     = 'generating envstats',
-            descriptionDone = 'generated envstats',
-            command         = [
-                PATH_PROXY_LAUNCHER,
-                '/opt/alchemist/bin/envstats.py',
-                '--verbose',
-                '--force',
-                util.Interpolate('.buildenv-%(prop:build_codename)s.json')
-            ],
-            workdir         = 'build',
-            haltOnFailure   = True
-        )
+        return [
+            steps.ShellCommand(
+                name            = 'generating envstats',
+                description     = 'generating envstats',
+                descriptionDone = 'generated envstats',
+                command         = [
+                    PATH_PROXY_LAUNCHER,
+                    '/opt/alchemist/bin/envstats.py',
+                    '--verbose',
+                    '--force',
+                    util.Interpolate('.buildenv-%(prop:build_codename)s.json')
+                ],
+                workdir         = self.BUILDDIR,
+                haltOnFailure   = True
+            )
+        ]
 
-    def _gen_step_envstats_upload(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_envstats_upload(self):  # pylint: disable=locally-disabled,no-self-use
         """
         Build step factory: Upload build environment statistics.
         """
-        return steps.FileUpload(
-            name            = 'uploading envstats',
-            description     = 'uploading envstats',
-            descriptionDone = 'uploaded envstats',
-            workdir         = 'build',
-            workersrc       = util.Interpolate('.buildenv-%(prop:build_codename)s.json'),
-            masterdest      = util.Interpolate('%s/.buildenv-%%(prop:build_codename)s.json' % self.project().home_dir)
-        )
+        return [
+            steps.FileUpload(
+                name            = 'uploading envstats',
+                description     = 'uploading envstats',
+                descriptionDone = 'uploaded envstats',
+                workdir         = self.BUILDDIR,
+                workersrc       = util.Interpolate('.buildenv-%(prop:build_codename)s.json'),
+                masterdest      = util.Interpolate('%s/.buildenv-%%(prop:build_codename)s.json' % self.project().home_dir)
+            )
+        ]
 
-    def _gen_step_envstats_chp(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_envstats_chp(self):  # pylint: disable=locally-disabled,no-self-use
         """
         Build step factory: MASTER - Ensure correct permissions for build environment statistics file.
         """
-        return steps.MasterShellCommand(
-            name            = 'chmoding envstats',
-            description     = 'chmoding envstats',
-            descriptionDone = 'chmoded envstats',
-            command         = util.Interpolate('chmod 0644 %s/.buildenv-%%(prop:build_codename)s.json' % self.project().home_dir),
-            workdir         = '/var/tmp',
-            haltOnFailure   = True
-        )
+        return [
+            steps.MasterShellCommand(
+                name            = 'chmoding envstats',
+                description     = 'chmoding envstats',
+                descriptionDone = 'chmoded envstats',
+                command         = util.Interpolate('chmod 0644 %s/.buildenv-%%(prop:build_codename)s.json' % self.project().home_dir),
+                workdir         = '/var/tmp',
+                haltOnFailure   = True
+            )
+        ]
 
-    def _gen_step_projstats_gen(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_projstats_gen(self):  # pylint: disable=locally-disabled,no-self-use
         """
         Build step factory: MASTER - Generate project statistics.
         """
-        return steps.MasterShellCommand(
-            name            = 'generating projstats',
-            description     = 'generating projstats',
-            descriptionDone = 'generated projstats',
-            command         = [
-                '/opt/alchemist/bin/projectstats.py',
-                '--verbose',
-                '--force',
-                '%s' % self.project().home_dir
-            ],
-            workdir         = '/var/tmp',
-            haltOnFailure   = True
-        )
+        return [
+            steps.MasterShellCommand(
+                name            = 'generating projstats',
+                description     = 'generating projstats',
+                descriptionDone = 'generated projstats',
+                command         = [
+                    '/opt/alchemist/bin/projectstats.py',
+                    '--verbose',
+                    '--force',
+                    '%s' % self.project().home_dir
+                ],
+                workdir         = '/var/tmp',
+                haltOnFailure   = True
+            )
+        ]
 
-    def _gen_step_debrepo_list(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_debrepo_list(self):  # pylint: disable=locally-disabled,no-self-use
         """
         Build step factory: MASTER - Listing contents of Debian repository (mainly for debugging purposes).
         """
-        return steps.MasterShellCommand(
-            name            = 'listing repository',
-            description     = 'listing debian repository',
-            descriptionDone = 'listed repository',
-            command         = util.Interpolate('reprepro -V -b %s/deb -C main list %%(prop:build_codename)s' % self.project().home_dir),
-            workdir         = '/var/tmp',
-            haltOnFailure   = True
-        )
+        return [
+            steps.MasterShellCommand(
+                name            = 'listing repository',
+                description     = 'listing debian repository',
+                descriptionDone = 'listed repository',
+                command         = util.Interpolate('reprepro -V -b %s/deb -C main list %%(prop:build_codename)s' % self.project().home_dir),
+                workdir         = '/var/tmp',
+                haltOnFailure   = True
+            )
+        ]
 
-    def _gen_step_filerepo_list(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_filerepo_list(self):  # pylint: disable=locally-disabled,no-self-use
         # MASTER: Listing contents of file repository (mainly for debugging purposes).
-        return steps.MasterShellCommand(
-            name            = 'listing repository',
-            description     = 'listing file repository',
-            descriptionDone = 'listed repository',
-            command         = util.Interpolate('ls -al %s/files/%%(prop:build_codename)s/' % self.project().home_dir),
-            workdir         = '/var/tmp',
-            haltOnFailure   = True
-        )
+        return [
+            steps.MasterShellCommand(
+                name            = 'listing repository',
+                description     = 'listing file repository',
+                descriptionDone = 'listed repository',
+                command         = util.Interpolate('ls -alR %s/files/%%(prop:build_codename)s/' % self.project().home_dir),
+                workdir         = '/var/tmp',
+                haltOnFailure   = True
+            )
+        ]
 
-    def _gen_step_filerepo_sign(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_filerepo_sign(self):  # pylint: disable=locally-disabled,no-self-use
         # MASTER: Generating the package signatures in file repository.
-        return steps.MasterShellCommand(
-            name            = 'signing files',
-            description     = 'signing files',
-            descriptionDone = 'signed files',
-            command         = [
-                '/opt/alchemist/bin/signer.py',
-                '--verbose',
-                util.Property('build_gpgkey'),
-                util.Interpolate('%s/files/%%(prop:build_codename)s' % self.project().home_dir)
-            ],
-            workdir         = '/var/tmp',
-            haltOnFailure   = True
-        )
+        return [
+            steps.MasterShellCommand(
+                name            = 'signing files',
+                description     = 'signing files',
+                descriptionDone = 'signed files',
+                command         = [
+                    '/opt/alchemist/bin/signer.py',
+                    '--verbose',
+                    util.Property('build_gpgkey'),
+                    util.Interpolate('%s/files/%%(prop:build_codename)s' % self.project().home_dir)
+                ],
+                workdir         = '/var/tmp',
+                haltOnFailure   = True
+            )
+        ]
 
-    def _gen_step_log_build(self):  # pylint: disable=locally-disabled,no-self-use
+    def _gen_steps_log_build(self):  # pylint: disable=locally-disabled,no-self-use
         """
         Build step factory: MASTER - Generate project build log.
         """
-        return steps.MasterShellCommand(
-            name            = 'logging build',
-            description     = 'logging build',
-            descriptionDone = 'logged build',
-            command         = [
-                '/opt/alchemist/bin/buildlogger.py',
-                '--verbose',
-                util.Interpolate("--codename=%(prop:build_codename)s"),
-                util.Interpolate("--gpgkey=%(prop:build_gpgkey)s"),
-                util.Interpolate("--suite=%(prop:build_suite)s"),
-                util.Interpolate("--version=%(prop:build_version)s"),
-                util.Interpolate("--project=%(prop:project)s"),
-                util.Interpolate("--branch=%(prop:branch)s"),
-                util.Interpolate("--revision=%(prop:got_revision)s"),
-                util.Interpolate("--buildername=%(prop:buildername)s"),
-                util.Interpolate("--buildnumber=%(prop:buildnumber)s"),
-                '%s' % self.project().home_dir
-            ],
-            workdir         = '/var/tmp',
-            haltOnFailure   = True
-        )
+        return [
+            steps.MasterShellCommand(
+                name            = 'logging build',
+                description     = 'logging build',
+                descriptionDone = 'logged build',
+                command         = [
+                    '/opt/alchemist/bin/buildlogger.py',
+                    '--verbose',
+                    util.Interpolate("--codename=%(prop:build_codename)s"),
+                    util.Interpolate("--gpgkey=%(prop:build_gpgkey)s"),
+                    util.Interpolate("--suite=%(prop:build_suite)s"),
+                    util.Interpolate("--version=%(prop:build_version)s"),
+                    util.Interpolate("--project=%(prop:project)s"),
+                    util.Interpolate("--branch=%(prop:branch)s"),
+                    util.Interpolate("--revision=%(prop:got_revision)s"),
+                    util.Interpolate("--buildername=%(prop:buildername)s"),
+                    util.Interpolate("--buildnumber=%(prop:buildnumber)s"),
+                    '%s' % self.project().home_dir
+                ],
+                workdir         = '/var/tmp',
+                haltOnFailure   = True
+            )
+        ]
 
     #---------------------------------------------------------------------------
 
@@ -327,10 +475,14 @@ class AlchemistBuildModule(object):
         """
         builder_name = '%s-%s' % (self.project().name, self.name)
         builder = util.BuilderConfig(
-            name        = builder_name,
-            workernames = self.workers,
-            factory     = self._gen_build_factory(),
-            tags        = ['project-%s' % self.project().name, 'build-%s' % self.mtype]
+            name       = builder_name,
+            workername = self.worker().name,
+            factory    = self._gen_build_factory(),
+            tags       = [
+                'project-%s' % self.project().name,
+                'build-%s' % self.mtype
+            ],
+            properties = self.props
         )
 
         LOGGER.info(
@@ -345,17 +497,17 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
     """
     Alchemist build module for checking the project (unit tests, linting, ...).
     """
-    def __init__(self, project, name, mtype, workers, **params):
-        AlchemistBuildModule.__init__(self, project, name, mtype, workers)
+    def __init__(self, project, name, mtype, workername, properties = None, **params):
+        AlchemistBuildModule.__init__(self, project, name, mtype, workername, properties)
 
     def _gen_build_factory(self):
         step_list = []
 
         # Include common pre-build steps.
-        step_list.append(self._gen_step_git())
-        step_list.append(self._gen_step_detect_version())
-        step_list.append(self._gen_step_set_build_props())
-        step_list.append(self._gen_step_tree_size())
+        step_list.extend(self._gen_steps_git())
+        step_list.extend(self._gen_steps_detect_version())
+        step_list.extend(self._gen_steps_set_build_props())
+        step_list.extend(self._gen_steps_tree_size())
 
         # Install project dependencies.
         step_list.append(steps.ShellCommand(
@@ -363,7 +515,7 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             description     = 'installing dependencies',
             descriptionDone = 'installed dependencies',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'deps'],
-            workdir         = 'build',
+            workdir         = self.BUILDDIR,
             haltOnFailure   = True
         ))
 
@@ -373,7 +525,7 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             description     = 'checking pyflakes',
             descriptionDone = 'checked pyflakes',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'pyflakes'],
-            workdir         = 'build',
+            workdir         = self.BUILDDIR,
             haltOnFailure   = False
         ))
 
@@ -383,7 +535,7 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             description     = 'checking pylint',
             descriptionDone = 'checked pylint',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'pylint'],
-            workdir         = 'build',
+            workdir         = self.BUILDDIR,
             haltOnFailure   = False
         ))
 
@@ -393,17 +545,17 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             description     = 'testing codebase',
             descriptionDone = 'testing',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'test'],
-            workdir         = 'build',
+            workdir         = self.BUILDDIR,
             haltOnFailure   = True
         ))
 
         # Include common post-build steps.
-        step_list.append(self._gen_step_envstats_gen())
-        step_list.append(self._gen_step_envstats_upload())
-        step_list.append(self._gen_step_envstats_chp())
+        step_list.extend(self._gen_steps_envstats_gen())
+        step_list.extend(self._gen_steps_envstats_upload())
+        step_list.extend(self._gen_steps_envstats_chp())
 
         # MASTER: Regenerate project statistics.
-        step_list.append(self._gen_step_projstats_gen())
+        step_list.extend(self._gen_steps_projstats_gen())
 
         return util.BuildFactory(step_list)
 
@@ -412,8 +564,8 @@ class AlchemistBuildBench(AlchemistBuildModule):  # pylint: disable=locally-disa
     """
     Alchemist build module for benchmarking the project.
     """
-    def __init__(self, project, name, mtype, workers, **params):
-        AlchemistBuildModule.__init__(self, project, name, mtype, workers)
+    def __init__(self, project, name, mtype, workername, properties = None, **params):
+        AlchemistBuildModule.__init__(self, project, name, mtype, workername, properties)
 
     def _gen_build_factory(self):
         """
@@ -422,10 +574,10 @@ class AlchemistBuildBench(AlchemistBuildModule):  # pylint: disable=locally-disa
         step_list = []
 
         # Include common pre-build steps.
-        step_list.append(self._gen_step_git())
-        step_list.append(self._gen_step_detect_version())
-        step_list.append(self._gen_step_set_build_props())
-        step_list.append(self._gen_step_tree_size())
+        step_list.extend(self._gen_steps_git())
+        step_list.extend(self._gen_steps_detect_version())
+        step_list.extend(self._gen_steps_set_build_props())
+        step_list.extend(self._gen_steps_tree_size())
 
         # Install project dependencies.
         step_list.append(steps.ShellCommand(
@@ -433,7 +585,7 @@ class AlchemistBuildBench(AlchemistBuildModule):  # pylint: disable=locally-disa
             description     = 'installing dependencies',
             descriptionDone = 'installed dependencies',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'deps'],
-            workdir         = 'build',
+            workdir         = self.BUILDDIR,
             haltOnFailure   = True
         ))
 
@@ -443,17 +595,17 @@ class AlchemistBuildBench(AlchemistBuildModule):  # pylint: disable=locally-disa
             description     = 'benchmarking',
             descriptionDone = 'benchmarked',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'benchmark'],
-            workdir         = 'build',
+            workdir         = self.BUILDDIR,
             haltOnFailure   = False
         ))
 
         # Include common environment detection steps.
-        step_list.append(self._gen_step_envstats_gen())
-        step_list.append(self._gen_step_envstats_upload())
-        step_list.append(self._gen_step_envstats_chp())
+        step_list.extend(self._gen_steps_envstats_gen())
+        step_list.extend(self._gen_steps_envstats_upload())
+        step_list.extend(self._gen_steps_envstats_chp())
 
         # MASTER: Regenerate project statistics.
-        step_list.append(self._gen_step_projstats_gen())
+        step_list.extend(self._gen_steps_projstats_gen())
 
         return util.BuildFactory(step_list)
 
@@ -462,8 +614,8 @@ class AlchemistBuildDoc(AlchemistBuildModule):  # pylint: disable=locally-disabl
     """
     Alchemist build module for building project documentation.
     """
-    def __init__(self, project, name, mtype, workers, **params):
-        AlchemistBuildModule.__init__(self, project, name, mtype, workers)
+    def __init__(self, project, name, mtype, workername, properties = None, **params):
+        AlchemistBuildModule.__init__(self, project, name, mtype, workername, properties)
         self.basedir  = params['basedir']
         self.builddir = params['builddir']
         self.docindex = params.get('docindex', 'index.html')
@@ -475,10 +627,10 @@ class AlchemistBuildDoc(AlchemistBuildModule):  # pylint: disable=locally-disabl
         step_list = []
 
         # Include common pre-build steps.
-        step_list.append(self._gen_step_git())
-        step_list.append(self._gen_step_detect_version())
-        step_list.append(self._gen_step_set_build_props())
-        step_list.append(self._gen_step_tree_size())
+        step_list.extend(self._gen_steps_git())
+        step_list.extend(self._gen_steps_detect_version())
+        step_list.extend(self._gen_steps_set_build_props())
+        step_list.extend(self._gen_steps_tree_size())
 
         # Generate metadata for documentation build.
         step_list.append(steps.ShellCommand(
@@ -508,7 +660,7 @@ class AlchemistBuildDoc(AlchemistBuildModule):  # pylint: disable=locally-disabl
             description     = 'generating html documentation',
             descriptionDone = 'generated documentation',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'docs'],
-            workdir         = 'build',
+            workdir         = self.BUILDDIR,
             haltOnFailure   = True
         ))
 
@@ -554,7 +706,7 @@ class AlchemistBuildDoc(AlchemistBuildModule):  # pylint: disable=locally-disabl
         ))
 
         # MASTER: Log the successfull build
-        step_list.append(self._gen_step_log_build())
+        step_list.extend(self._gen_steps_log_build())
 
         return util.BuildFactory(step_list)
 
@@ -563,11 +715,13 @@ class AlchemistBuildDeb(AlchemistBuildModule):  # pylint: disable=locally-disabl
     """
     Alchemist build module for building Debian packages.
     """
-    def __init__(self, project, name, mtype, workers, **params):
-        AlchemistBuildModule.__init__(self, project, name, mtype, workers)
-        self.packagename = params['packagename']
-        self.libdir      = params['libdir']
-        self.devserver   = params.get('devserver', None)
+    def __init__(self, project, name, mtype, workername, properties = None, **params):
+        AlchemistBuildModule.__init__(self, project, name, mtype, workername, properties)
+        self.packagename       = params['packagename']
+        self.libdir            = params['libdir']
+        self.make_target_deps  = params.get('make_target_deps', None)
+        self.make_target_build = params.get('make_target_build', 'buildbot')
+        self.devserver         = params.get('devserver', None)
 
     def _gen_build_factory(self):
         """
@@ -576,20 +730,25 @@ class AlchemistBuildDeb(AlchemistBuildModule):  # pylint: disable=locally-disabl
         step_list = []
 
         # Include common pre-build steps.
-        step_list.append(self._gen_step_git())
-        step_list.append(self._gen_step_detect_version())
-        step_list.append(self._gen_step_set_build_props())
-        step_list.append(self._gen_step_tree_size())
+        step_list.extend(self._gen_steps_git())
+        step_list.extend(self._gen_steps_detect_version())
+        step_list.extend(self._gen_steps_set_build_props())
+        step_list.extend(self._gen_steps_tree_size())
 
-        # Install necessary NodeJS modules.
-        step_list.append(steps.ShellCommand(
-            name            = 'installing nodejs',
-            description     = 'installing nodejs',
-            descriptionDone = 'installed nodejs',
-            command         = ['npm', 'install'],
-            workdir         = 'build',
-            haltOnFailure   = True
-        ))
+        # Install necessary build dependencies.
+        if self.make_target_deps:
+            step_list.append(steps.ShellCommand(
+                name            = 'installing dependencies',
+                description     = 'installing dependencies',
+                descriptionDone = 'installed dependencies',
+                command         = [
+                    PATH_PROXY_LAUNCHER,
+                    'make',
+                    self.make_target_deps
+                ],
+                workdir         = self.BUILDDIR,
+                haltOnFailure   = True
+            ))
 
         # Generate build version information file.
         step_list.append(steps.ShellCommand(
@@ -609,7 +768,7 @@ class AlchemistBuildDeb(AlchemistBuildModule):  # pylint: disable=locally-disabl
                 'buildmeta.py',
                 './%s_buildmeta.py' % self.libdir
             ],
-            workdir         = 'build',
+            workdir         = self.BUILDDIR,
             haltOnFailure   = True
         ))
 
@@ -618,8 +777,14 @@ class AlchemistBuildDeb(AlchemistBuildModule):  # pylint: disable=locally-disabl
             name            = 'generating package',
             description     = 'generating debian package',
             descriptionDone = 'generated package',
-            command         = [PATH_PROXY_LAUNCHER, 'grunt', 'deb-buildbot', util.Interpolate('--distribution=%(prop:build_codename)s'), util.Interpolate('--buildnumber=%(prop:buildnumber)s')],
-            workdir         = 'build',
+            command         = [
+                PATH_PROXY_LAUNCHER,
+                'make',
+                self.make_target_build,
+                util.Interpolate('BUILD_NUMBER=%(prop:buildnumber)s'),
+                util.Interpolate('BUILD_SUITE=%(prop:build_codename)s')
+            ],
+            workdir         = self.BUILDDIR,
             haltOnFailure   = True
         ))
 
@@ -630,12 +795,21 @@ class AlchemistBuildDeb(AlchemistBuildModule):  # pylint: disable=locally-disabl
             descriptionDone = 'detected package',
             command         = "find . -maxdepth 1 -name '*.deb' | grep -v latest",
             property        = 'package_file_deb',
-            workdir         = 'build/deploy/%s' % self.project().name,
+            workdir         = os.path.join(self.BUILDDIR, 'debdist'),
             haltOnFailure   = True
         ))
 
+        # Lint debian package.
+        step_list.append(steps.DebLintian(
+            name            = 'linting package',
+            description     = 'linting debian package',
+            descriptionDone = 'linted package',
+            fileloc         = util.Interpolate('%(prop:package_file_deb)s'),
+            workdir         = os.path.join(self.BUILDDIR, 'debdist')
+        ))
+
         # List content of Debian repository before adding package.
-        step_list.append(self._gen_step_debrepo_list())
+        step_list.extend(self._gen_steps_debrepo_list())
 
         # Include Debian package into repository.
         # TODO: Should be master task and come after upload.
@@ -644,15 +818,15 @@ class AlchemistBuildDeb(AlchemistBuildModule):  # pylint: disable=locally-disabl
             description     = 'including debian package',
             descriptionDone = 'included package',
             command         = util.Interpolate('reprepro -V -b %s/deb -C main includedeb %%(prop:build_codename)s %%(prop:package_file_deb)s' % self.project().home_dir),
-            workdir         = 'build/deploy/%s' % self.project().name,
+            workdir         = os.path.join(self.BUILDDIR, 'debdist'),
             haltOnFailure   = True
         ))
 
         # List content of Debian repository after adding package.
-        step_list.append(self._gen_step_debrepo_list())
+        step_list.extend(self._gen_steps_debrepo_list())
 
         # List content of repository before adding and signing package.
-        step_list.append(self._gen_step_filerepo_list())
+        step_list.extend(self._gen_steps_filerepo_list())
 
         # Moving generated Debian package to file repository.
         # TODO: Should be master task and come after upload.
@@ -661,23 +835,23 @@ class AlchemistBuildDeb(AlchemistBuildModule):  # pylint: disable=locally-disabl
             description     = 'moving debian package',
             descriptionDone = 'moved package',
             command         = util.Interpolate("mv -f -t %s/files/%%(prop:build_codename)s %%(prop:package_file_deb)s" % self.project().home_dir),
-            workdir         = 'build/deploy/%s' % self.project().name,
+            workdir         = os.path.join(self.BUILDDIR, 'debdist'),
             haltOnFailure   = True
         ))
 
         # Generating the package signatures in file repository.
-        step_list.append(self._gen_step_filerepo_sign())
+        step_list.extend(self._gen_steps_filerepo_sign())
 
         # List content of repository after adding and signing package.
-        step_list.append(self._gen_step_filerepo_list())
+        step_list.extend(self._gen_steps_filerepo_list())
 
         # Include common environment detection steps.
-        step_list.append(self._gen_step_envstats_gen())
-        step_list.append(self._gen_step_envstats_upload())
-        step_list.append(self._gen_step_envstats_chp())
+        step_list.extend(self._gen_steps_envstats_gen())
+        step_list.extend(self._gen_steps_envstats_upload())
+        step_list.extend(self._gen_steps_envstats_chp())
 
         # MASTER: Regenerate project statistics.
-        step_list.append(self._gen_step_projstats_gen())
+        step_list.extend(self._gen_steps_projstats_gen())
 
         # Upgrade package on development server.
         if self.devserver:
@@ -692,7 +866,7 @@ class AlchemistBuildDeb(AlchemistBuildModule):  # pylint: disable=locally-disabl
             ))
 
         # MASTER: Log the successfull build
-        step_list.append(self._gen_step_log_build())
+        step_list.extend(self._gen_steps_log_build())
 
         return util.BuildFactory(step_list)
 
@@ -701,10 +875,12 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
     """
     Alchemist build module for building Python packages.
     """
-    def __init__(self, project, name, mtype, workers, **params):
-        AlchemistBuildModule.__init__(self, project, name, mtype, workers)
-        self.pypi_account = params.get('pypi_account', None)
-        self.devserver    = params.get('devserver', None)
+    def __init__(self, project, name, mtype, workername, properties = None, **params):
+        AlchemistBuildModule.__init__(self, project, name, mtype, workername, properties)
+        self.make_target_deps  = params.get('make_target_deps', None)
+        self.make_target_build = params.get('make_target_build', 'buildbot')
+        self.pypi_account      = params.get('pypi_account', None)
+        self.devserver         = params.get('devserver', None)
 
     def _gen_build_factory(self):
         """
@@ -713,18 +889,48 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
         step_list = []
 
         # Include common pre-build steps.
-        step_list.append(self._gen_step_git())
-        step_list.append(self._gen_step_detect_version())
-        step_list.append(self._gen_step_set_build_props())
-        step_list.append(self._gen_step_tree_size())
+        step_list.extend(self._gen_steps_git())
+        step_list.extend(self._gen_steps_detect_version())
+        step_list.extend(self._gen_steps_set_build_props())
+        step_list.extend(self._gen_steps_tree_size())
+
+        # Install necessary build dependencies.
+        if self.make_target_deps:
+            step_list.append(steps.ShellCommand(
+                name            = 'installing dependencies',
+                description     = 'installing dependencies',
+                descriptionDone = 'installed dependencies',
+                command         = [
+                    PATH_PROXY_LAUNCHER,
+                    'make',
+                    self.make_target_deps
+                ],
+                workdir         = self.BUILDDIR,
+                haltOnFailure   = True
+            ))
 
         # Generate the Python packages.
         step_list.append(steps.ShellCommand(
             name            = 'generating packages',
             description     = 'generating python packages',
             descriptionDone = 'generated packages',
-            command         = [PATH_PROXY_LAUNCHER, 'make', 'buildbot'],
-            workdir         = 'build',
+            command         = [
+                PATH_PROXY_LAUNCHER,
+                'make',
+                self.make_target_build
+            ],
+            workdir         = self.BUILDDIR,
+            haltOnFailure   = True
+        ))
+
+        # Detect name of the generated Python package file (invoke as string to force shell expansions).
+        step_list.append(steps.SetPropertyFromCommand(
+            name            = 'detecting package file',
+            description     = 'detecting python package file name',
+            descriptionDone = 'detected package file',
+            command         = "find . -maxdepth 1 -name '*.whl' | grep -v latest",
+            property        = 'package_file_whl',
+            workdir         = os.path.join(self.BUILDDIR, 'dist'),
             haltOnFailure   = True
         ))
 
@@ -733,9 +939,9 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
             name            = 'detecting package',
             description     = 'detecting python package name',
             descriptionDone = 'detected package',
-            command         = "find . -maxdepth 1 -name '*.whl' | grep -v latest",
-            property        = 'package_file_whl',
-            workdir         = 'build/dist',
+            command         = "find . -maxdepth 1 -name '*.whl' | grep -v latest | cut -d '-' -f 1",
+            extract_fn      = cb_any_detect_whl,
+            workdir         = os.path.join(self.BUILDDIR, 'dist'),
             haltOnFailure   = True
         ))
 
@@ -744,7 +950,7 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
             name            = 'uploading packages',
             description     = 'uploading python packages to master',
             descriptionDone = 'uploaded packages',
-            workdir         = 'build/dist',
+            workdir         = os.path.join(self.BUILDDIR, 'dist'),
             workersrcs      = ["%s*" % self.project().name],
             masterdest      = util.Interpolate('/var/tmp/%s-whl-%%(prop:build_codename)s-%%(prop:buildnumber)s/' % self.project().name),
             url             = util.Interpolate('https://%s/%s/files/%%(prop:build_codename)s/' % (FQDN_MASTER_SERVER, self.project().name)),
@@ -776,7 +982,7 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
                 'pypi.pypirc',
                 '.pypirc'
             ],
-            workdir         = 'build',
+            workdir         = self.BUILDDIR,
             haltOnFailure   = True
         ))
 
@@ -786,14 +992,21 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
             name            = 'uploading packages',
             description     = 'uploading python packages to pypi',
             descriptionDone = 'uploaded packages',
-            command         = ['twine', 'upload', 'dist/%s*' % self.project().name, '--skip-existing', '--config-file', '.pypirc'],
-            workdir         = 'build',
+            command         = [
+                'twine',
+                'upload',
+                'dist/%s*' % self.project().name,
+                '--skip-existing',
+                '--config-file',
+                '.pypirc'
+            ],
+            workdir         = self.BUILDDIR,
             haltOnFailure   = True,
             doStepIf        = cb_detect_production,
         ))
 
         # List content of repository before adding and signing package.
-        step_list.append(self._gen_step_filerepo_list())
+        step_list.extend(self._gen_steps_filerepo_list())
 
         # Remove generated .pypirc for Twine.
         # TODO: Should be master task and come after upload.
@@ -801,8 +1014,12 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
             name            = 'removing metadata',
             description     = 'removing pypirc metadata',
             descriptionDone = 'removed metadata',
-            command         = ['rm', '-f', '.pypirc'],
-            workdir         = 'build',
+            command         = [
+                'rm',
+                '-f',
+                '.pypirc'
+            ],
+            workdir         = self.BUILDDIR,
             haltOnFailure   = True
         ))
 
@@ -812,8 +1029,8 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
             name            = 'moving packages',
             description     = 'moving python packages',
             descriptionDone = 'moved packages',
-            command         = util.Interpolate("mv -f -t %s/files/%%(prop:build_codename)s %s*" % (self.project().home_dir, self.project().name)),
-            workdir         = 'build/dist',
+            command         = util.Interpolate("mkdir -p %s/files/%%(prop:build_codename)s/%%(prop:package_whl)s; mv -f -t %s/files/%%(prop:build_codename)s/%%(prop:package_whl)s %s*" % (self.project().home_dir, self.project().home_dir, self.project().name)),
+            workdir         = os.path.join(self.BUILDDIR, 'dist'),
             haltOnFailure   = True
         ))
 
@@ -830,21 +1047,21 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
         #    ))
 
         # Generating the package signatures in file repository.
-        step_list.append(self._gen_step_filerepo_sign())
+        step_list.extend(self._gen_steps_filerepo_sign())
 
         # List content of repository after adding and signing package.
-        step_list.append(self._gen_step_filerepo_list())
+        step_list.extend(self._gen_steps_filerepo_list())
 
         # Include common environment detection steps.
-        step_list.append(self._gen_step_envstats_gen())
-        step_list.append(self._gen_step_envstats_upload())
-        step_list.append(self._gen_step_envstats_chp())
+        step_list.extend(self._gen_steps_envstats_gen())
+        step_list.extend(self._gen_steps_envstats_upload())
+        step_list.extend(self._gen_steps_envstats_chp())
 
         # MASTER: Regenerate project statistics.
-        step_list.append(self._gen_step_projstats_gen())
+        step_list.extend(self._gen_steps_projstats_gen())
 
         # MASTER: Log the successfull build
-        step_list.append(self._gen_step_log_build())
+        step_list.extend(self._gen_steps_log_build())
 
         return util.BuildFactory(step_list)
 
@@ -902,16 +1119,16 @@ class AlchemistBuildSequence(object):
     """
     Object representation of Alchemist build sequence.
     """
-    def __init__(self, project, build_modules):
+    def __init__(self, project, build_sequence):
         self.project = weakref.ref(project)
-        self.build_modules = build_modules
+        self.build_modules = build_sequence
 
         for module_name in self.build_modules:
             if not project.module_exists(module_name):
                 raise ValueError("Invalid module name '%s' used in build sequence for project %s" % (module_name, project.name))
 
     def __repr__(self):
-        return 'AlchemistBuild(%s)' % (repr(sorted(self.build_modules)),)
+        return 'AlchemistBuildSequence(%s)' % (repr(sorted(self.build_modules)),)
 
     #---------------------------------------------------------------------------
 
@@ -923,6 +1140,30 @@ class AlchemistBuildSequence(object):
         for module in self.build_modules:
             result.append('%s-%s' % (self.project().name, module))
         return result
+
+
+#===============================================================================
+
+
+class AlchemistBuildSetup(object):
+    """
+    Object representation of Alchemist pre-build setup.
+    """
+    def __init__(self, project, **build_setup):
+        self.project = weakref.ref(project)
+        self.packages_pip = None
+        self.packages_deb = None
+        self.commands     = None
+
+        if 'packages_pip' in build_setup:
+            self.packages_pip = build_setup['packages_pip']
+        if 'packages_deb' in build_setup:
+            self.packages_deb = build_setup['packages_deb']
+        if 'commands' in build_setup:
+            self.commands = build_setup['commands']
+
+    def __repr__(self):
+        return 'AlchemistBuildSetup()'
 
 
 #===============================================================================
@@ -973,36 +1214,58 @@ class AlchemistProject(object):
         self.subrepos = params.get('subrepos', False)
 
         self.metadata = self._init_metadata(**params['metadata'])
-        self.build_modules = self._init_build_modules(params['build_modules'])
+        self.build_setup = self._init_build_setup(**params['build'])
+        self.build_modules = self._init_build_modules(**params['build'])
+        self.build = self._init_build_sequence(**params['build'])
         self.distros = self._init_distros(params['distributions'])
-        self.build = self._init_build(params['build'])
 
-    def _init_metadata(self, **params):  # pylint: disable=locally-disabled,no-self-use
+    def _init_metadata(self, **metadata):  # pylint: disable=locally-disabled,no-self-use
         result = {}
         for key in ('homepage', 'description', 'bugtrack', 'master_repo'):
-            result[key] = params.get(key, None)
+            result[key] = metadata.get(key, None)
         return result
 
-    def _init_build_modules(self, build_modules):  # pylint: disable=locally-disabled,no-self-use
+    def _init_build_setup(self, **build_params):  # pylint: disable=locally-disabled,no-self-use
+        if 'setup' in build_params:
+            return AlchemistBuildSetup(self, **build_params['setup'])
+        return None
+
+    def _init_build_modules(self, **build_params):  # pylint: disable=locally-disabled,no-self-use
+        if 'modules' not in build_params:
+            raise ValueError(
+                "Missing list of available build modules for project %s" % self.name
+            )
+
         result = {}
-        for module_name, module_data in build_modules.iteritems():
+        for module_name, module_data in build_params['modules'].items():
             if module_name in result:
-                raise ValueError("Module %s is defined twice for project %s" % (module_name, self.name))
+                raise ValueError(
+                    "Module %s is defined twice for project %s" % (module_name, self.name)
+                )
+
             module_type = module_data.setdefault('mtype', module_name)
             if module_type not in ALCHEMIST_BUILD_MODULES:
-                raise ValueError("Invalid module type %s defined for project %s" % (module_type, self.name))
+                raise ValueError(
+                    "Invalid module type %s defined for project %s" % (module_type, self.name)
+                )
+
             module_class = ALCHEMIST_BUILD_MODULES[module_type]
             result[module_name] = module_class(self, module_name, **module_data)
+
         return result
+
+    def _init_build_sequence(self, **build_params):  # pylint: disable=locally-disabled,no-self-use
+        if 'sequence' not in build_params:
+            raise ValueError(
+                "Missing build sequence definition for project %s" % self.name
+            )
+        return AlchemistBuildSequence(self, build_params['sequence'])
 
     def _init_distros(self, distros):  # pylint: disable=locally-disabled,no-self-use
         result = []
         for distro in distros:
             result.append(AlchemistDistro(self, **distro))
         return result
-
-    def _init_build(self, module_list):  # pylint: disable=locally-disabled,no-self-use
-        return AlchemistBuildSequence(self, module_list)
 
     def __str__(self):
         return self.name

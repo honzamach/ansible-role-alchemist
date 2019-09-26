@@ -29,7 +29,7 @@
                                     </a>
                                 </li>
                                 {% endif %}
-                                {% if "doc" in project.build_modules %}
+                                {% if "doc" in project.build.modules %}
                                 <li class="nav-item">
                                     <a href="#project-content-{{ project.name }}-tab-doc" aria-controls="project-content-{{ project.name }}-tab-doc" aria-expanded="false" role="tab" data-toggle="tab" class="nav-link text-uppercase">
                                         <i class="fas fa-fw fa-2x fa-book" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="Documentation"></i>
@@ -46,7 +46,7 @@
                                         <i class="fas fa-fw fa-2x fa-folder-open" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="File repository"></i>
                                     </a>
                                 </li>
-                                {% if "deb" in project.build_modules %}
+                                {% if "deb" in project.build.modules %}
                                 <li class="nav-item">
                                     <a href="#project-content-{{ project.name }}-tab-deb" aria-controls="project-content-{{ project.name }}-tab-deb" aria-expanded="false" role="tab" data-toggle="tab" class="nav-link text-uppercase">
                                         <i class="fab fa-fw fa-2x fa-linux" aria-hidden="true" data-toggle="tooltip" data-placement="top" title="Debian repository"></i>
@@ -183,7 +183,7 @@
                                 {% endif %}
 
 
-                                {% if "doc" in project.build_modules %}
+                                {% if "doc" in project.build.modules %}
                                 <div role="tabpanel" id="project-content-{{ project.name }}-tab-doc" class="tab-pane fade">
                                     <h3>Documentation</h3>
                                     <hr>
@@ -314,7 +314,7 @@ git clone {{ config.server_url }}/{{ project.name }}/repo.git {{ project.name }}
                                 </div>
                                 <!-- END TABPANEL -------------------------- -->
 
-                                {% if "deb" in project.build_modules %}
+                                {% if "deb" in project.build.modules %}
                                 <div role="tabpanel" id="project-content-{{ project.name }}-tab-deb" class="tab-pane fade">
                                     <h3>Debian repository</h3>
                                     <hr>

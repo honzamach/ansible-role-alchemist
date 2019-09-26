@@ -36,6 +36,12 @@
     name: "{{ hm_alchemist__deb_install_packages }} "
     state: latest
 
+- name: Installing Grunt automation tool
+  shell: npm install grunt-cli -g
+  args:
+    chdir: /tmp
+    creates: /usr/local/bin/grunt
+
 - name: Removing native system PIP packages
   apt:
     name: "{{ item }}"
@@ -93,20 +99,10 @@
     - setuptools
     - virtualenv
     - virtualenvwrapper
-    - buildbot
-    - buildbot-www
-    - buildbot-console-view
-    - buildbot-grid-view
-    - buildbot-waterfall-view
-    - buildbot-worker
 
-- name: Installing Grunt automation tool
-  shell: npm install grunt-cli -g
-  args:
-    chdir: /tmp
-    creates: /usr/local/bin/grunt
 
 #-------------------------------------------------------------------------------
+
 
 - name: Creating buildbot local user account
   user:
@@ -173,7 +169,7 @@
     - {"src": "signer.py",       "dest": "/opt/alchemist/bin/signer.py",       "mode": "0755"}
     - {"src": "templater.py",    "dest": "/opt/alchemist/bin/templater.py",    "mode": "0755"}
 
-- name: Managing custom worker templates
+- name: Installing custom worker templates
   copy:
     src: "templater_templates/"
     dest: "/opt/alchemist/etc/templates/"
@@ -181,7 +177,7 @@
     group: root
     mode: 0644
 
-- name: Managing web interface page templates
+- name: Installing web interface page templates
   copy:
     src: "templates/"
     dest: "/opt/alchemist/lib/templates/"
@@ -191,7 +187,7 @@
   notify:
     - Restart Apache service
 
-- name: Managing web interface static files
+- name: Installing web interface static files
   copy:
     src: "static/"
     dest: "/opt/alchemist/lib/static/"

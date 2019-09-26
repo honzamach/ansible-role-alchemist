@@ -61,11 +61,28 @@ def sign_gpg(gpg_bin, gpg_key, file_path, force):
     else:
         verbose_print(" - signature already exists '{}'".format(signature_path))
 
+def walk_dir(directory, pattern):
+    """
+
+    """
+    file_list = os.listdir(directory)
+    for fname in sorted(file_list):
+        if os.path.isfile(fname):
+            if pattern.match(fname):
+                verbose_print("Processing file: '{}'".format(fname))
+                sign_sha256(fname, args.force)
+                sign_gpg(gpg_bin, args.gpgkey, fname, args.force)
+            else:
+                verbose_print("Skipping file: '{}'".format(fname))
+        elif os.path.isdir(fname):
+            verbose_print("Processing subdirectory: '{}'".format(fname))
+            walk_dir(os.path.join(directory, fname), pattern)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-                description = 'Secure all packages in given cache directory'
-            )
+        description = 'Sign all packages in given cache directory'
+    )
 
     # Positional mandatory arguments.
     parser.add_argument('gpgkey', type=str, help='GPG key id to sign files with')
@@ -75,7 +92,7 @@ if __name__ == "__main__":
     parser.add_argument('--verbose', '-v', default=0,     action='count',      help='increase output verbosity')
     parser.add_argument('--force',   '-f', default=False, action='store_true', help='overwrite existing signatures')
 
-    parser.add_argument('--file-ptrn',   type=str, default='^.*\.(whl|deb|tar|gz|zip)$', help='pattern for which files to sign')
+    parser.add_argument('--file-ptrn',   type=str, default=r'^.*\.(whl|deb|tar|gz|zip)$', help='pattern for which files to sign')
     parser.add_argument('--gpg-version', type=int, default=1, choices=[1, 2],            help='which version of gpg to use')
 
     args = parser.parse_args()
@@ -93,13 +110,4 @@ if __name__ == "__main__":
     ptrn = re.compile(args.file_ptrn)
     verbose_print("Using cache file pattern: '{}'".format(args.file_ptrn))
 
-    file_list = os.listdir(args.cache)
-    for f in sorted(file_list):
-        if not os.path.isfile(f):
-            continue
-        if ptrn.match(f):
-            verbose_print("Processing file: '{}'".format(f))
-            sign_sha256(f, args.force)
-            sign_gpg(gpg_bin, args.gpgkey, f, args.force)
-        else:
-            verbose_print("Skipping file: '{}'".format(f))
+    walk_dir(args.cache, ptrn)

@@ -9,12 +9,12 @@
 #----------------------- <+++ansible-managed-file+++> -------------------------+
 
 #
-# This script activates Python virtual environment for appropriate buildbot
-# worker and then executes given command.
+# This script activates appropriate chroot for appropriate buildbot worker and
+# then executes given command.
 #
 
-# Debuging information
-#echo Running: wai=`whoami` uid=$UID euid=$EUID pwd=`pwd` args=$@
+CHROOTDIR=$1
+shift
 
-# Source the virtual environment and launch script
-source /home/buildbot/workers/{{ item }}/venv/bin/activate && $@
+sudo chroot ${CHROOTDIR} /bin/bash -x -c "cd /build && $@"
+

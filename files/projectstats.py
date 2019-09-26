@@ -25,7 +25,11 @@ import collections
 import subprocess
 
 
-VERBOSE = 0
+VERBOSE  = 0
+
+PTRN_WHL = re.compile(r'^([^-]+)-([^-]+)-.*\.(whl)$')
+PTRN_DEB = re.compile(r'^([^_]+)_([^_]+)_([^_]+)\.(deb)$')
+PTRN_TGZ = re.compile(r'^([^-]+)-([^-]+)\.(tar\.gz|tgz)$')
 
 
 def verbose_print(msg, level = 1):
@@ -40,83 +44,83 @@ def verbose_print(msg, level = 1):
 #-------------------------------------------------------------------------------
 
 
-def analyze_file(f, file_path, data):
-    """
-    Analyze given file.
-    """
-    sr = os.stat(file_path)
-    data['file']     = f
+def _analyze_file(fname, file_path, data):
+    statr = os.stat(file_path)
+    data['file']     = fname
     data['path']     = file_path
-    data['atime_ts'] = sr.st_atime
-    data['mtime_ts'] = sr.st_mtime
-    data['ctime_ts'] = sr.st_ctime
-    data['adate']    = str(datetime.datetime.fromtimestamp(sr.st_atime))
-    data['mdate']    = str(datetime.datetime.fromtimestamp(sr.st_mtime))
-    data['cdate']    = str(datetime.datetime.fromtimestamp(sr.st_ctime))
+    data['atime_ts'] = statr.st_atime
+    data['mtime_ts'] = statr.st_mtime
+    data['ctime_ts'] = statr.st_ctime
+    data['adate']    = str(datetime.datetime.fromtimestamp(statr.st_atime))
+    data['mdate']    = str(datetime.datetime.fromtimestamp(statr.st_mtime))
+    data['cdate']    = str(datetime.datetime.fromtimestamp(statr.st_ctime))
     return data
+
+def _process_file(result, fname, file_path):
+    pkg_name  = pkg_version = pkg_type = None
+    while True:
+        mtch = PTRN_WHL.match(fname)
+        if mtch:
+            verbose_print("Processing '.whl' package file: '{}'".format(fname))
+            pkg_name    = mtch.group(1)
+            pkg_version = mtch.group(2)
+            pkg_type    = mtch.group(3)
+            break
+
+        mtch = PTRN_DEB.match(fname)
+        if mtch:
+            verbose_print("Processing '.deb' package file: '{}'".format(fname))
+            pkg_name    = mtch.group(1)
+            pkg_version = mtch.group(2)
+            pkg_type    = mtch.group(4)
+            break
+
+        mtch = PTRN_TGZ.match(fname)
+        if mtch:
+            verbose_print("Processing '.tgz' package file: '{}'".format(fname))
+            pkg_name    = mtch.group(1)
+            pkg_version = mtch.group(2)
+            pkg_type    = 'tgz'
+            break
+
+        break
+
+    if not pkg_name:
+        verbose_print("Skipping package file: '{}'".format(fname))
+        return
+
+    if pkg_version == 'latest':
+        verbose_print("Skipping 'latest' version package file: '{}'".format(fname))
+        return
+
+    fanl = _analyze_file(fname, file_path, {'version': pkg_version})
+    result[pkg_name][pkg_type]['versions'][pkg_version] = fanl
+    if not 'latest' in result[pkg_name][pkg_type]:
+        result[pkg_name][pkg_type]['latest'] = fanl
+    elif fanl['mtime_ts'] > result[pkg_name][pkg_type]['latest']['mtime_ts']:
+        result[pkg_name][pkg_type]['latest'] = fanl
+
+def _process_subdir(result, subdir):
+    file_list = os.listdir(subdir)
+    for fname in reversed(sorted(file_list)):
+        file_path = os.path.join(subdir, fname)
+
+        if os.path.isfile(file_path):
+            _process_file(result, fname, file_path)
+
+        if os.path.isdir(file_path):
+            _process_subdir(result, file_path)
 
 def statistics_files_distribution(distribution_dir):
     """
     Analyze statistics for given file repository distribution.
     """
-    ptrn_whl = re.compile('^([^-]+)-([^-]+)-.*\.(whl)$')
-    ptrn_deb = re.compile('^([^_]+)_([^_]+)_([^_]+)\.(deb)$')
-    ptrn_tgz = re.compile('^([^-]+)-([^-]+)\.(tar\.gz|tgz)$')
 
     # Make ourselves recursive default dict for result.
     rdd = lambda: collections.defaultdict(rdd)
     result = collections.defaultdict(rdd)
 
-    file_list = os.listdir(distribution_dir)
-    for f in reversed(sorted(file_list)):
-        pkg_name = pkg_version = pkg_type = None
-
-        file_path = os.path.join(distribution_dir, f)
-        if not os.path.isfile(file_path):
-            continue
-
-        while True:
-            m = ptrn_whl.match(f)
-            if m:
-                verbose_print("Processing '.whl' package file: '{}'".format(f))
-                pkg_name    = m.group(1)
-                pkg_version = m.group(2)
-                pkg_type    = m.group(3)
-                break
-
-            m = ptrn_deb.match(f)
-            if m:
-                verbose_print("Processing '.deb' package file: '{}'".format(f))
-                pkg_name    = m.group(1)
-                pkg_version = m.group(2)
-                pkg_type    = m.group(4)
-                break
-
-            m = ptrn_tgz.match(f)
-            if m:
-                verbose_print("Processing '.tgz' package file: '{}'".format(f))
-                pkg_name    = m.group(1)
-                pkg_version = m.group(2)
-                pkg_type    = 'tgz'
-                break
-
-            break
-
-        if not pkg_name:
-            verbose_print("Skipping package file: '{}'".format(f))
-            continue
-
-        if pkg_version == 'latest':
-            verbose_print("Skipping 'latest' version package file: '{}'".format(f))
-            continue
-
-        fa = analyze_file(f, file_path, {'version': pkg_version})
-        result[pkg_name][pkg_type]['versions'][pkg_version] = fa
-        if not 'latest' in result[pkg_name][pkg_type]:
-            result[pkg_name][pkg_type]['latest'] = fa
-        elif fa['mtime_ts'] > result[pkg_name][pkg_type]['latest']['mtime_ts']:
-            result[pkg_name][pkg_type]['latest'] = fa
-
+    _process_subdir(result, distribution_dir)
     return result
 
 
@@ -129,15 +133,15 @@ def statistics_files(repository_dir):
 
     ptrn = re.compile('^[^.]')
     distro_list = os.listdir(repository_dir)
-    for d in sorted(distro_list):
-        distro_path = os.path.join(repository_dir, d)
+    for dname in sorted(distro_list):
+        distro_path = os.path.join(repository_dir, dname)
         if not os.path.isdir(distro_path):
             continue
-        if ptrn.match(d):
-            verbose_print("Processing distribution directory: '{}'".format(d))
-            result[d] = statistics_files_distribution(distro_path)
+        if ptrn.match(dname):
+            verbose_print("Processing distribution directory: '{}'".format(dname))
+            result[dname] = statistics_files_distribution(distro_path)
         else:
-            verbose_print("Skipping directory: '{}'".format(d))
+            verbose_print("Skipping directory: '{}'".format(dname))
     return result
 
 
@@ -157,18 +161,18 @@ def statistics_deb(repository_dir):
     # Example output lines to be parsed.
     # development|main|amd64 pool/main/m/mentat-ng/mentat-ng_0.2.84_all.deb
     # development|main|i386 pool/main/m/mentat-ng/mentat-ng_0.2.84_all.deb
-    ptrn = re.compile('(.*)\|(.*)\|(.*)\s+.*/([^/]+\.deb)')
+    ptrn = re.compile(r'(.*)\|(.*)\|(.*)\s+.*/([^/]+\.deb)')
 
     try:
         output = subprocess.check_output('reprepro -V -b {} dumpreferences'.format(repository_dir), shell=True, stderr=subprocess.STDOUT)
         output = output.decode('utf-8')
         lines = output.split("\n")
-        for l in lines:
-            l = l.strip()
-            m = ptrn.match(l)
-            if m:
-                verbose_print("Found package: '{}'".format(m.group(0)))
-                result[m.group(1)][m.group(4)] = 1
+        for line in lines:
+            line = line.strip()
+            mtch = ptrn.match(line)
+            if mtch:
+                verbose_print("Found package: '{}'".format(mtch.group(0)))
+                result[mtch.group(1)][mtch.group(4)] = 1
     except:
         pass
     return result
@@ -202,35 +206,35 @@ def statistics_git(repository_dir):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(
-                description = 'Generate project statistics for given project'
-            )
+    PARSER = argparse.ArgumentParser(
+        description = 'Generate project statistics for given project'
+    )
 
     # Positional mandatory arguments.
-    parser.add_argument('projectdir', type=str, help='path to project directory')
+    PARSER.add_argument('projectdir', type=str, help='path to project directory')
 
     # Optional arguments.
-    parser.add_argument('--verbose', '-v', default=0,     action='count',      help='increase output verbosity')
-    parser.add_argument('--force',   '-f', default=False, action='store_true', help='overwrite existing files')
+    PARSER.add_argument('--verbose', '-v', default=0,     action='count',      help='increase output verbosity')
+    PARSER.add_argument('--force',   '-f', default=False, action='store_true', help='overwrite existing files')
 
-    args = parser.parse_args()
+    ARGS = PARSER.parse_args()
 
     #---------------------------------------------------------------------------
 
-    VERBOSE = args.verbose
+    VERBOSE = ARGS.verbose
 
-    verbose_print("Processing project directory: '{}'".format(args.projectdir))
+    verbose_print("Processing project directory: '{}'".format(ARGS.projectdir))
 
     stats = {}
-    stats['files'] = statistics_files(os.path.join(args.projectdir, 'files'))
-    stats['deb']   = statistics_deb(os.path.join(args.projectdir,   'deb'))
-    stats['git']   = statistics_git(os.path.join(args.projectdir,   'repo.git'))
+    stats['files'] = statistics_files(os.path.join(ARGS.projectdir, 'files'))
+    stats['deb']   = statistics_deb(os.path.join(ARGS.projectdir,   'deb'))
+    stats['git']   = statistics_git(os.path.join(ARGS.projectdir,   'repo.git'))
 
     verbose_print("Detected project statistics:")
     verbose_print(pprint.pformat(stats))
 
-    target_file = os.path.join(args.projectdir, '.statistics.json')
-    if args.force or not os.path.isfile(target_file):
+    target_file = os.path.join(ARGS.projectdir, '.statistics.json')
+    if ARGS.force or not os.path.isfile(target_file):
         with open(target_file, "w") as fh:
             json.dump(stats, fh)
         verbose_print("Written statistics to target file: '{}'".format(target_file))

@@ -16,7 +16,7 @@
 ### END INIT INFO
 
 PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin
-MASTER_RUNNER=/usr/bin/buildbot
+MASTER_RUNNER=/usr/local/bin/buildbot
 
 . /lib/lsb/init-functions
 
