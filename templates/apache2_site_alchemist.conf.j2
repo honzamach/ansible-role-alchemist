@@ -105,7 +105,7 @@ WSGIPythonPath /opt/alchemist/lib
     SSLEngine on
     #SSLOptions +FakeBasicAuth +ExportCertData +StrictRequire
 
-{% if "servers-certified" in group_names %}
+{% if "servers_certified" in group_names %}
     # Using custom server certificates
     SSLCertificateFile      {{ hm_certified__cert_host_dir }}/cert.pem
     SSLCertificateKeyFile   {{ hm_certified__cert_host_dir }}/key.pem

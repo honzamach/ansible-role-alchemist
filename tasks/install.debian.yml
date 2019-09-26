@@ -62,7 +62,7 @@
     creates: /usr/local/bin/pip2
 
 - name: Installing latest version of PIP3
-  command: "python /root/get-pip.py"
+  command: "python3 /root/get-pip.py"
   args:
     creates: /usr/local/bin/pip3
 
