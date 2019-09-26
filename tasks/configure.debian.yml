@@ -92,12 +92,8 @@
     backup: yes
   with_first_found:
     - "host_files/{{ inventory_hostname }}/master.cfg.j2"
-    - "group_files/servers-production/master.cfg.{{ ansible_lsb['codename'] }}.j2"
-    - "group_files/servers-production/master.cfg.j2"
-    - "group_files/servers-development/master.cfg.{{ ansible_lsb['codename'] }}.j2"
-    - "group_files/servers-development/master.cfg.j2"
-    - "group_files/servers-demo/master.cfg.{{ ansible_lsb['codename'] }}.j2"
-    - "group_files/servers-demo/master.cfg.j2"
+    - "group_files/servers-{{ msms_server_type }}/master.cfg.{{ ansible_lsb['codename'] }}.j2"
+    - "group_files/servers-{{ msms_server_type }}/master.cfg.j2"
     - "group_files/servers/master.cfg.{{ ansible_lsb['codename'] }}.j2"
     - "group_files/servers/master.cfg.j2"
     - "master.cfg.{{ ansible_lsb['codename'] }}.j2"
