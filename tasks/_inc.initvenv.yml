@@ -1,16 +1,14 @@
 ---
 
 - debug:
-    msg: "Configuring virtualenv for {{ worker }}"
-  with_items: "{{ ri_venv_packages }}"
+    msg: "Configuring virtualenv for {{ worker }}: {{ ri_venv_packages }}"
   tags:
     - debug
 
-- name: Configuring virtualenv for worker
+- name: Installing Python packages to virtualenv for worker
   pip:
-    name: "{{ item }}"
+    name: "{{ ri_venv_packages }}"
     virtualenv: "/home/buildbot/workers/{{ worker }}/venv"
     state: latest
   become: true
   become_user: "{{ hm_alchemist__account_buildbot }}"
-  with_items: "{{ ri_venv_packages }}"

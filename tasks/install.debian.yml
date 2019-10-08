@@ -31,24 +31,21 @@
     filename: nodesource-src
     update_cache: yes
 
-- name: Installing essential packages
+- name: Installing essential system packages
   apt:
     name: "{{ hm_alchemist__deb_install_packages }} "
     state: latest
+
+- name: Removing unwanted system packages
+  apt:
+    name: "{{ hm_alchemist__deb_remove_packages }}"
+    state: absent
 
 - name: Installing Grunt automation tool
   shell: npm install grunt-cli -g
   args:
     chdir: /tmp
     creates: /usr/local/bin/grunt
-
-- name: Removing native system PIP packages
-  apt:
-    name: "{{ item }}"
-    state: absent
-  with_items:
-    - python-pip
-    - python3-pip
 
 - name: Fetching latest version of PIP installation script
   get_url:
@@ -68,37 +65,15 @@
 
 - name: Installing required system-wide Python3 modules
   pip:
-    name: "{{ item }}"
+    name: "{{ hm_alchemist__pip3_install_packages }}"
     executable: pip3
     state: latest
-  with_items:
-    - twine
-    - jinja2
-    - babel
-    - flask
-    - setuptools
-    - virtualenv
-    - virtualenvwrapper
-    - buildbot
-    - buildbot-www
-    - buildbot-console-view
-    - buildbot-grid-view
-    - buildbot-waterfall-view
-    - buildbot-worker
 
-- name: Installing required system-wide Python modules
+- name: Installing required system-wide Python2 modules
   pip:
-    name: "{{ item }}"
+    name: "{{ hm_alchemist__pip2_install_packages }}"
     executable: pip2
     state: latest
-  with_items:
-    - twine
-    - jinja2
-    - babel
-    - flask
-    - setuptools
-    - virtualenv
-    - virtualenvwrapper
 
 
 #-------------------------------------------------------------------------------

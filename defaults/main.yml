@@ -40,6 +40,44 @@ hm_alchemist__deb_install_packages:
     - rrdtool
     - librrd-dev
 
+#
+# List of Debian packages, that MUST NOT be present on target system.
+#
+hm_alchemist__deb_remove_packages:
+    - python-pip
+    - python3-pip
+
+#
+# List of Python3 packages, that MUST be present on target system.
+#
+hm_alchemist__pip3_install_packages:
+    - twine
+    - jinja2
+    - babel
+    - flask
+    - setuptools
+    - virtualenv
+    - virtualenvwrapper
+    - buildbot
+    - buildbot-www
+    - buildbot-console-view
+    - buildbot-grid-view
+    - buildbot-waterfall-view
+    - buildbot-worker
+
+#
+# List of Python2 packages, that MUST be present on target system.
+#
+hm_alchemist__pip2_install_packages:
+    - twine
+    - jinja2
+    - babel
+    - flask
+    - setuptools
+    - virtualenv
+    - virtualenvwrapper
+
+
 hm_alchemist__debootstrap_url: http://ftp.cz.debian.org/debian
 
 #
