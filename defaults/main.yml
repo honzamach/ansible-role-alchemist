@@ -97,11 +97,6 @@ hm_alchemist__home_buildworkers: /home/buildbot/workers
 hm_alchemist__home_projects: /var/projects
 
 #
-# Home directory for all chroot templates.
-#
-hm_alchemist__home_chroots: /var/chroots
-
-#
 # Name of the Buildbot user account.
 #
 hm_alchemist__account_buildbot: buildbot
@@ -120,37 +115,6 @@ hm_alchemist__change_user: change
 # Change authentication: password
 #
 hm_alchemist__change_passwd: changepw
-
-#
-# Configurations of all required workers
-#
-hm_alchemist__buildbot_workers:
-    worker-master:
-        chroot: stretch-py3
-    worker-py3:
-        chroot: stretch-py3
-    worker-py2:
-        chroot: stretch-py2
-
-# Buildbot worker chroot configurations.
-hm_alchemist__chroots:
-    stretch-py3:
-        suite: stretch
-        python: python3
-        packages_deb: "{{ hm_alchemist__deb_packages_worker }}"
-        packages_pip: "{{ hm_alchemist__pip_package_worker }}"
-        locales:
-            - en_US.UTF-8 UTF-8
-            - cs_CZ.UTF-8 UTF-8
-
-    stretch-py2:
-        suite: stretch
-        python: python2
-        packages_deb: "{{ hm_alchemist__deb_packages_worker }}"
-        packages_pip: "{{ hm_alchemist__pip_package_worker }}"
-        locales:
-            - en_US.UTF-8 UTF-8
-            - cs_CZ.UTF-8 UTF-8
 
 #
 # Buildbot worker configuration: Port number.

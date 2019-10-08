@@ -28,26 +28,22 @@ LOGGER = logging.getLogger('bb_alchemist')
 # Custom global constants.
 #
 PATH_PROXY_LAUNCHER = None
-PATH_PROXY_CHROOT   = None
 FQDN_MASTER_SERVER  = None
 WORKER_DIR          = None
-CHROOT_DIR          = None
 
 WORKERS  = None
 PROJECTS = None
 
 
-def initialize(master_server, proxy_launcher, proxy_chroot, worker_dir, chroot_dir):
+def initialize(master_server, proxy_launcher, worker_dir):
     """
     This method must be called before using the library to properly initialize
     important internal configurations.
     """
-    global FQDN_MASTER_SERVER, PATH_PROXY_LAUNCHER, PATH_PROXY_CHROOT, WORKER_DIR, CHROOT_DIR  # pylint: disable=locally-disabled,global-statement
+    global FQDN_MASTER_SERVER, PATH_PROXY_LAUNCHER, WORKER_DIR  # pylint: disable=locally-disabled,global-statement
     FQDN_MASTER_SERVER  = master_server
     PATH_PROXY_LAUNCHER = proxy_launcher
-    PATH_PROXY_CHROOT   = proxy_chroot
     WORKER_DIR          = worker_dir
-    CHROOT_DIR          = chroot_dir
 
 
 def setup_workers(config):
@@ -167,14 +163,13 @@ class AlchemistWorker(object):
     """
     Object representation of Alchemist pre-build setup.
     """
-    def __init__(self, name, chroot, setup = None, properties = None):
+    def __init__(self, name, setup = None, properties = None):
         self.name   = name
-        self.chroot = chroot
         self.setup  = setup
         self.props  = properties or {}
 
     def __repr__(self):
-        return 'AlchemistWorker(%s,%s)' % (self.name, self.chroot)
+        return 'AlchemistWorker(%s)' % (self.name)
 
     def generate_worker(self, password, admin_email):
         """
@@ -188,9 +183,8 @@ class AlchemistWorker(object):
             properties = self.props
         )
         LOGGER.info(
-            "Generated WORKER '%s' based on chroot '%s'",
-            self.name,
-            self.chroot
+            "Generated WORKER '%s'",
+            self.name
         )
         return tmp
 
@@ -218,47 +212,6 @@ class AlchemistBuildModule(object):
         return '%s(%s)' % (self.__class__.__name__, self.name)
 
     #---------------------------------------------------------------------------
-
-    def _get_chrooted_cmdlist(self, command_list):
-        return [
-            PATH_PROXY_CHROOT,
-            util.Interpolate('%(prop:builddir)s/build'),
-            '"{}"'.format(' '.join(command_list))
-        ]
-
-    def _gen_steps_chroot_init(self):
-        """
-        Build step factory: Generate build chroot initialization step.
-        """
-        return [
-            steps.RemoveDirectory(
-                name            = 'removing chroot',
-                description     = 'removing chroot',
-                descriptionDone = 'removed chroot',
-                dir             = 'build',
-                haltOnFailure   = False,
-                flunkOnFailure  = False
-            ),
-            steps.ShellCommand(
-                name            = 'initializing chroot',
-                description     = 'initializing chroot',
-                descriptionDone = 'initialized chroot',
-                command         = [
-                    'cp',
-                    '-r',
-                    os.path.join(CHROOT_DIR, self.worker().chroot),
-                    util.Interpolate('%(prop:builddir)s/build')
-                ],
-                haltOnFailure   = True
-            ),
-            steps.MakeDirectory(
-                name            = 'creating builddir',
-                description     = 'creating builddir',
-                descriptionDone = 'created builddir',
-                dir             = self.BUILDDIR,
-                haltOnFailure   = True
-            ),
-        ]
 
     def _gen_steps_git(self):
         """

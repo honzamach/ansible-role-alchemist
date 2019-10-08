@@ -31,14 +31,6 @@
     fail_msg: "'hm_alchemist__home_projects' must be defined and not '/'"
     success_msg: "'hm_alchemist__home_projects' looks sane"
 
-- name: Chroot directory must be defined and contain sane value
-  assert:
-    that:
-      - "hm_alchemist__home_chroots is defined"
-      - "hm_alchemist__home_chroots != '/'"
-    fail_msg: "'hm_alchemist__home_chroots' must be defined and not '/'"
-    success_msg: "'hm_alchemist__home_chroots' looks sane"
-
 - block:
 
     - import_tasks: install.debian.yml

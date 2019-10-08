@@ -54,9 +54,7 @@ import bb_alchemist
 bb_alchemist.initialize(
     '{{ ansible_fqdn }}',
     '../../proxy_launcher.sh',
-    '../../proxy_chroot.sh',
-    '{{ hm_alchemist__home_buildworkers }}',
-    '{{ hm_alchemist__home_chroots }}'
+    '{{ hm_alchemist__home_buildworkers }}'
 )
 
 #
@@ -66,7 +64,6 @@ bb_alchemist.setup_workers({
 {% for workerid in hm_alchemist__buildbot_workers.keys()|sort %}
     '{{ workerid }}': {
         'name': '{{ workerid }}',
-        'chroot': '{{ hm_alchemist__buildbot_workers[workerid]['chroot'] }}'{% if 'setup' in hm_alchemist__buildbot_workers[workerid] %},
         'setup': {{ hm_alchemist__buildbot_workers[workerid]['setup'] | to_json }}
 {% endif %}
     }{{ "," if not loop.last else "" }}

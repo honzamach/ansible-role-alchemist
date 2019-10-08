@@ -124,21 +124,6 @@
 
 #-------------------------------------------------------------------------------
 
-
-- include: _inc.initchroot.yml
-  vars:
-    chroot_name: "{{ outer_item }}"
-    chroot_suite: "{{ hm_alchemist__chroots[outer_item]['suite'] }}"
-    chroot_python: "{{ hm_alchemist__chroots[outer_item]['python'] }}"
-    chroot_pkgs_deb: "{{ hm_alchemist__chroots[outer_item]['packages_deb'] }}"
-    chroot_pkgs_pip: "{{ hm_alchemist__chroots[outer_item]['packages_pip'] }}"
-    chroot_locales: "{{ hm_alchemist__chroots[outer_item]['locales'] }}"
-  with_list: "{{ hm_alchemist__chroots.keys() | sort }}"
-  loop_control:
-    loop_var: outer_item
-
-#-------------------------------------------------------------------------------
-
 - name: Managing work directories for all buildbot workers
   file:
     path: "{{ hm_alchemist__home_buildworkers }}/{{ item }}"
@@ -209,15 +194,6 @@
     owner: root
     group: root
     mode: 0755
-
-- name: Managing proxy chroot script
-  template:
-    src: "proxy_chroot.sh.j2"
-    dest: "{{ hm_alchemist__home_buildworkers }}/{{ item }}/proxy_chroot.sh"
-    owner: root
-    group: root
-    mode: 0755
-  with_items: "{{ hm_alchemist__buildbot_workers.keys() | sort }}"
 
 - name: Managing proxy launcher script
   template:
