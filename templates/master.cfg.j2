@@ -63,8 +63,7 @@ bb_alchemist.initialize(
 bb_alchemist.setup_workers({
 {% for workerid in hm_alchemist__buildbot_workers.keys()|sort %}
     '{{ workerid }}': {
-        'name': '{{ workerid }}',
-        'setup': {{ hm_alchemist__buildbot_workers[workerid]['setup'] | to_json }}
+        'name': '{{ workerid }}'
     }{{ "," if not loop.last else "" }}
 {% endfor %}
 })
