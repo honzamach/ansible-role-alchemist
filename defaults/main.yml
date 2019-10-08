@@ -64,6 +64,7 @@ hm_alchemist__pip3_install_packages:
     - buildbot-grid-view
     - buildbot-waterfall-view
     - buildbot-worker
+    - service_identity
 
 #
 # List of Python2 packages, that MUST be present on target system.
@@ -174,6 +175,7 @@ hm_alchemist__pip_package_worker:
     - sphinx
     - babel
     - sphinx-rtd-theme
+    - service_identity
 
 hm_alchemist__deb_packages_worker:
     - apt
