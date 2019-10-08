@@ -65,7 +65,6 @@ bb_alchemist.setup_workers({
     '{{ workerid }}': {
         'name': '{{ workerid }}',
         'setup': {{ hm_alchemist__buildbot_workers[workerid]['setup'] | to_json }}
-{% endif %}
     }{{ "," if not loop.last else "" }}
 {% endfor %}
 })
