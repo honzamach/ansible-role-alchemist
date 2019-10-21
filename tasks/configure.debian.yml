@@ -84,20 +84,12 @@
 
 - name: Configuring buildbot master
   template:
-    src: "{{ item }}"
+    src: "master.cfg.j2"
     dest: "{{ hm_alchemist__home_buildmaster }}/master.cfg"
     owner: "{{ hm_alchemist__account_buildbot }}"
     group: "{{ hm_alchemist__account_buildbot }}"
     mode: 0644
     backup: yes
-  with_first_found:
-    - "host_files/{{ inventory_hostname }}/master.cfg.j2"
-    - "group_files/servers-{{ msms_server_type }}/master.cfg.{{ ansible_lsb['codename'] }}.j2"
-    - "group_files/servers-{{ msms_server_type }}/master.cfg.j2"
-    - "group_files/servers/master.cfg.{{ ansible_lsb['codename'] }}.j2"
-    - "group_files/servers/master.cfg.j2"
-    - "master.cfg.{{ ansible_lsb['codename'] }}.j2"
-    - "master.cfg.j2"
   notify:
     - Restart buildmaster service
     - Restart buildbot-worker service
@@ -269,10 +261,11 @@
     mode: 0644
     backup: yes
   with_first_found:
-    - "host_files/{{ inventory_hostname }}/apache2_site_alchemist_redirect.conf.{{ ansible_distribution_release }}.j2"
-    - "host_files/{{ inventory_hostname }}/apache2_site_alchemist_redirect.conf.j2"
-    - "group_files/servers/apache2_site_alchemist_redirect.conf.{{ ansible_distribution_release }}.j2"
-    - "group_files/servers/apache2_site_alchemist_redirect.conf.j2"
+    - "inventory/host_files/{{ inventory_hostname }}/honzamach.alchemist/apache2_site_alchemist_redirect.conf.j2"
+    - "inventory/group_files/servers_{{ msms_server_type }}/honzamach.alchemist/apache2_site_alchemist_redirect.conf.{{ ansible_distribution_release }}.j2"
+    - "inventory/group_files/servers_{{ msms_server_type }}/honzamach.alchemist/apache2_site_alchemist_redirect.conf.j2"
+    - "inventory/group_files/servers/honzamach.alchemist/apache2_site_alchemist_redirect.conf.{{ ansible_distribution_release }}.j2"
+    - "inventory/group_files/servers/honzamach.alchemist/apache2_site_alchemist_redirect.conf.j2"
     - "apache2_site_alchemist_redirect.conf.{{ ansible_distribution_release }}.j2"
     - "apache2_site_alchemist_redirect.conf.j2"
   notify: Restart Apache service
@@ -286,10 +279,11 @@
     mode: 0644
     backup: yes
   with_first_found:
-    - "host_files/{{ inventory_hostname }}/apache2_site_alchemist.conf.{{ ansible_distribution_release }}.j2"
-    - "host_files/{{ inventory_hostname }}/apache2_site_alchemist.conf.j2"
-    - "group_files/servers/apache2_site_alchemist.conf.{{ ansible_distribution_release }}.j2"
-    - "group_files/servers/apache2_site_alchemist.conf.j2"
+    - "inventory/host_files/{{ inventory_hostname }}/honzamach.alchemist/apache2_site_alchemist.conf.j2"
+    - "inventory/group_files/servers_{{ msms_server_type }}/honzamach.alchemist/apache2_site_alchemist.conf.{{ ansible_distribution_release }}.j2"
+    - "inventory/group_files/servers_{{ msms_server_type }}/honzamach.alchemist/apache2_site_alchemist.conf.j2"
+    - "inventory/group_files/servers/honzamach.alchemist/apache2_site_alchemist.conf.{{ ansible_distribution_release }}.j2"
+    - "inventory/group_files/servers/honzamach.alchemist/apache2_site_alchemist.conf.j2"
     - "apache2_site_alchemist.conf.{{ ansible_distribution_release }}.j2"
     - "apache2_site_alchemist.conf.j2"
   notify: Restart Apache service

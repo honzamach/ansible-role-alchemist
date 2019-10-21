@@ -1,12 +1,5 @@
 ---
 
-- name: Including secret configurations
-  include_vars: "vault/secrets.yml"
-  tags:
-    - always
-
-#-------------------------------------------------------------------------------
-
 - name: Build master directory must be defined and contain sane value
   assert:
     that:
