@@ -55,6 +55,7 @@ hm_alchemist__pip3_install_packages:
     - jinja2
     - babel
     - flask
+    - markupsafe
     - setuptools
     - virtualenv
     - virtualenvwrapper
@@ -132,6 +133,7 @@ hm_alchemist__pip_package_worker:
     - pip
     - setuptools
     - twine
+    - markupsafe
     - nose
     - six
     - pyflakes
