@@ -3,96 +3,30 @@
 Role **alchemist**
 ================================================================================
 
-Ansible role for convenient installation of the automated build system Alchemist.
+.. note::
+
+    This documentation page and role itself is still work in progress.
 
 * `Ansible Galaxy page <https://galaxy.ansible.com/honzamach/alchemist>`__
 * `GitHub repository <https://github.com/honzamach/ansible-role-alchemist>`__
 * `Travis CI page <https://travis-ci.org/honzamach/ansible-role-alchemist>`__
 
+Ansible role for convenient installation of the automated build system **Alchemist**.
 
-Description
---------------------------------------------------------------------------------
+**Table of Contents:**
 
+* :ref:`section-role-alchemist-installation`
+* :ref:`section-role-alchemist-dependencies`
+* :ref:`section-role-alchemist-usage`
+* :ref:`section-role-alchemist-variables`
+* :ref:`section-role-alchemist-files`
+* :ref:`section-role-alchemist-author`
 
-This role is responsible for provisioning of **Alchemist** server.
-
-.. note::
-
-    This role supports the :ref:`template customization <section-overview-customize-templates>` feature.
-
-
-Requirements
---------------------------------------------------------------------------------
-
-This role does not have any special requirements.
+This role is part of the `MSMS <https://github.com/honzamach/msms>`__ package.
+Some common features are documented in its :ref:`manual <section-manual>`.
 
 
-Dependencies
---------------------------------------------------------------------------------
-
-
-This role is dependent on following roles:
-
-* :ref:`accounts <section-role-accounts>`
-* :ref:`certified <section-role-certified>`
-* :ref:`shibboleth <section-role-shibboleth>`
-
-No other roles have direct dependency on this role.
-
-
-Managed files
---------------------------------------------------------------------------------
-
-This role directly manages content of following files on target system:
-
-* ``/etc/syslog-ng/syslog-ng.conf``
-
-
-Role variables
---------------------------------------------------------------------------------
-
-
-.. envvar:: hm_alchemist__custom_repositories
-
-    List of desired custom Ansible playbook repositories.
-
-    * *Occurence:* **optional**
-    * *Datatype:* ``dictionary``
-    * *Default value:* ``empty dictionary``
-
-
-Foreign variables
---------------------------------------------------------------------------------
-
-
-:envvar:`hm_accounts__users`
-
-    Create custom Git repository for Ansible playbooks for each user.
-
-
-Usage and customization
---------------------------------------------------------------------------------
-
-This role is (attempted to be) written according to the `Ansible best practices <https://docs.ansible.com/ansible/latest/user_guide/playbooks_best_practices.html>`__. The default implementation should fit most users,
-however you may customize it by tweaking default variables and providing custom
-templates.
-
-
-Variable customizations
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Most of the usefull variables are defined in ``defaults/main.yml`` file, so they
-can be easily overridden almost from `anywhere <https://docs.ansible.com/ansible/latest/user_guide/playbooks_variables.html#variable-precedence-where-should-i-put-a-variable>`__.
-
-
-Template customizations
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-This roles uses *with_first_found* mechanism for all of its templates. If you do
-not like anything about built-in template files you may provide your own custom
-templates. For now please see the role tasks for list of all checked paths for
-each of the template files.
-
+.. _section-role-alchemist-installation:
 
 Installation
 --------------------------------------------------------------------------------
@@ -113,15 +47,31 @@ Currently the advantage of using direct Git cloning is the ability to easily upd
 the role when new version comes out.
 
 
-Example Playbook
+.. _section-role-alchemist-dependencies:
+
+Dependencies
+--------------------------------------------------------------------------------
+
+This role is dependent on following roles:
+
+* :ref:`accounts <section-role-accounts>`
+* :ref:`certified <section-role-certified>`
+* :ref:`shibboleth <section-role-shibboleth>`
+
+No other roles have dependency on this role.
+
+
+.. _section-role-alchemist-usage:
+
+Usage
 --------------------------------------------------------------------------------
 
 Example content of inventory file ``inventory``::
 
     [servers_alchemist]
-    localhost
+    your-server
 
-Example content of role playbook file ``playbook.yml``::
+Example content of role playbook file ``role_playbook.yml``::
 
     - hosts: servers_alchemist
       remote_user: root
@@ -132,16 +82,151 @@ Example content of role playbook file ``playbook.yml``::
 
 Example usage::
 
-    ansible-playbook -i inventory playbook.yml
+    # Run everything:
+    ansible-playbook --ask-vault-pass --inventory inventory role_playbook.yml
 
 
-License
+.. _section-role-alchemist-variables:
+
+Configuration variables
 --------------------------------------------------------------------------------
 
-MIT
+
+Internal role variables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. envvar:: hm_alchemist__remove_packages
+
+    List of packages defined separately for each linux distribution and package manager,
+    that MUST NOT be present on target system. Any package on this list will be removed
+    from target host. This role currently recognizes only ``apt`` for ``debian``.
+
+    * *Datatype:* ``dict``
+    * *Default:* (please see YAML file ``defaults/main.yml``)
+    * *Example:*
+
+    .. code-block:: yaml
+
+        hm_alchemist__remove_packages:
+          debian:
+            apt:
+              - syslog-ng
+              - ...
+
+.. envvar:: hm_alchemist__install_packages
+
+    List of packages defined separately for each linux distribution and package manager,
+    that MUST be present on target system. Any package on this list will be installed on
+    target host. This role currently recognizes only ``apt``, ``pip3`` and ``pip2`` for
+    ``debian``.
+
+    * *Datatype:* ``dict``
+    * *Default:* (please see YAML file ``defaults/main.yml``)
+    * *Example:*
+
+    .. code-block:: yaml
+
+        hm_alchemist__install_packages:
+          debian:
+            apt:
+              - syslog-ng
+              - ...
+            pip3:
+              - setuptools
+
+.. envvar:: hm_alchemist__home_buildmaster
+
+    Home directory for Buildbot master.
+
+    * *Datatype:* ``string``
+    * *Default:* ``/home/buildbot/master``
+
+.. envvar:: hm_alchemist__home_buildworkers
+
+    Home directory for local buildbot workers.
+
+    * *Datatype:* ``string``
+    * *Default:* ``/home/buildbot/workers``
+
+.. envvar:: hm_alchemist__home_projects
+
+    Home directory for all projects.
+
+    * *Datatype:* ``string``
+    * *Default:* ``/var/projects``
+
+.. envvar:: hm_alchemist__account_buildbot
+
+    Name of the Buildbot user account.
+
+    * *Datatype:* ``string``
+    * *Default:* ``buildbot``
+
+.. envvar:: hm_alchemist__change_port
+
+    Port number for listening for changes.
+
+    * *Datatype:* ``integer``
+    * *Default:* ``9999``
+
+.. envvar:: hm_alchemist__change_user
+
+    Change authentication: user
+
+    * *Datatype:* ``string``
+    * *Default:* ``change``
+
+.. envvar:: hm_alchemist__change_passwd
+
+    Change authentication: password
+
+    * *Datatype:* ``string``
+    * *Default:* ``changepw``
+
+.. envvar:: hm_alchemist__worker_port
+
+    Buildbot worker configuration: Port number.
+
+    * *Datatype:* ``integer``
+    * *Default:* ``9989``
+
+.. envvar:: hm_alchemist__worker_passwd
+
+    Buildbot worker configuration: Password.
+
+    * *Datatype:* ``string``
+    * *Default:* ``workerpasswd``
 
 
-Author Information
+Foreign variables
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+:envvar:`hm_accounts__users`
+
+    Create custom Git repository for Ansible playbooks for each designated user.
+
+
+.. _section-role-alchemist-files:
+
+Managed files
 --------------------------------------------------------------------------------
 
-Jan Mach <honza.mach.ml@gmail.com>
+.. note::
+
+    This role supports the :ref:`template customization <section-overview-role-customize-templates>` feature.
+
+This role manages content of following files on target system:
+
+* ``/etc/....conf``
+
+
+.. _section-role-alchemist-author:
+
+Author and license
+--------------------------------------------------------------------------------
+
+| *Copyright:* (C) since 2019 Honza Mach <honza.mach.ml@gmail.com>
+| *Author:* Honza Mach <honza.mach.ml@gmail.com>
+| Use of this role is governed by the MIT license, see LICENSE file.
+|
