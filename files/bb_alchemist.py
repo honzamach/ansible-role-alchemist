@@ -705,28 +705,6 @@ class AlchemistBuildDeb(AlchemistBuildModule):  # pylint: disable=locally-disabl
                 haltOnFailure   = True
             ))
 
-        # Generate build version information file.
-        step_list.append(steps.ShellCommand(
-            name            = 'generating metadata',
-            description     = 'generating code build metadata',
-            descriptionDone = 'generated metadata',
-            command         = [
-                '/opt/alchemist/bin/templater.py',
-                '--verbose',
-                '--force',
-                '--template-dir', '/opt/alchemist/etc/templates',
-                '--variable', util.Interpolate('codename=%(prop:build_codename)s'),
-                '--variable', util.Interpolate('suite=%(prop:build_suite)s'),
-                '--variable', util.Interpolate('bversion=%(prop:build_version)s'),
-                '--variable', util.Interpolate('revision=%(prop:got_revision)s'),
-                '--variable', util.Interpolate('bnumber=%(prop:buildnumber)s'),
-                'buildmeta.py',
-                './%s_buildmeta.py' % self.libdir
-            ],
-            workdir         = self.BUILDDIR,
-            haltOnFailure   = True
-        ))
-
         # Generate Debian package using appropriate Grunt task.
         step_list.append(steps.ShellCommand(
             name            = 'generating package',
