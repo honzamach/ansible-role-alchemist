@@ -18,6 +18,7 @@ import re
 import json
 import weakref
 import logging
+import datetime
 from past.builtins import basestring
 
 from buildbot.plugins import worker, steps, schedulers, util
@@ -600,6 +601,7 @@ class AlchemistBuildDoc(AlchemistBuildModule):  # pylint: disable=locally-disabl
                 '--variable', util.Interpolate('bversion=%(prop:build_version)s'),
                 '--variable', util.Interpolate('revision=%(prop:got_revision)s'),
                 '--variable', util.Interpolate('bnumber=%(prop:buildnumber)s'),
+                '--variable', ('bdate=%s' % datetime.datetime.utcnow().isoformat()),
                 'sphinx.metadata.json',
                 'metadata.json'
             ],
@@ -830,6 +832,7 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
     """
     def __init__(self, project, name, mtype, workername, properties = None, **params):
         AlchemistBuildModule.__init__(self, project, name, mtype, workername, properties)
+        self.buildmeta_dir     = params.get('buildmeta_dir', None)
         self.make_target_deps  = params.get('make_target_deps', None)
         self.make_target_build = params.get('make_target_build', 'buildbot')
         self.pypi_account      = params.get('pypi_account', None)
@@ -857,6 +860,31 @@ class AlchemistBuildWheel(AlchemistBuildModule):  # pylint: disable=locally-disa
                     PATH_PROXY_LAUNCHER,
                     'make',
                     self.make_target_deps
+                ],
+                workdir         = self.BUILDDIR,
+                haltOnFailure   = True
+            ))
+
+        # Generate build version information file.
+        if self.buildmeta_dir:
+            step_list.append(steps.ShellCommand(
+                name            = 'generating metadata',
+                description     = 'generating code build metadata',
+                descriptionDone = 'generated metadata',
+                command         = [
+                    '/opt/alchemist/bin/templater.py',
+                    '--verbose',
+                    '--verbose',
+                    '--force',
+                    '--template-dir', '/opt/alchemist/etc/templates',
+                    '--variable', util.Interpolate('codename=%(prop:build_codename)s'),
+                    '--variable', util.Interpolate('suite=%(prop:build_suite)s'),
+                    '--variable', util.Interpolate('bversion=%(prop:build_version)s'),
+                    '--variable', util.Interpolate('revision=%(prop:got_revision)s'),
+                    '--variable', util.Interpolate('bnumber=%(prop:buildnumber)s'),
+                    '--variable', ('bdate=%s' % datetime.datetime.utcnow().isoformat()),
+                    'buildmeta.py',
+                    './%s_buildmeta.py' % self.buildmeta_dir
                 ],
                 workdir         = self.BUILDDIR,
                 haltOnFailure   = True
