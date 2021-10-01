@@ -453,9 +453,9 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
     """
     def __init__(self, project, name, mtype, workername, properties = None, **params):
         AlchemistBuildModule.__init__(self, project, name, mtype, workername, properties)
-        self.fail_pyflakes = params.get('fail_pyflakes', True)
-        self.fail_pylint   = params.get('fail_pylint', True)
-        self.fail_pytest   = params.get('fail_test', True)
+        self.fail_pyflakes = True if params.get('fail_pyflakes', 'yes') == 'yes' else False
+        self.fail_pylint   = True if params.get('fail_pylint', 'yes') == 'yes' else False
+        self.fail_test     = True if params.get('fail_test', 'yes') == 'yes' else False
 
     def _gen_build_factory(self):
         step_list = []
@@ -473,7 +473,8 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             descriptionDone = 'installed dependencies',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'deps'],
             workdir         = self.BUILDDIR,
-            haltOnFailure   = True
+            haltOnFailure   = True,
+            flunkOnFailure  = True
         ))
 
         # Check project code with pyflakes.
@@ -483,7 +484,8 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             descriptionDone = 'checked pyflakes',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'pyflakes'],
             workdir         = self.BUILDDIR,
-            haltOnFailure   = self.fail_pyflakes
+            haltOnFailure   = self.fail_pyflakes,
+            flunkOnFailure  = self.fail_pyflakes
         ))
 
         # Check project code with pylint.
@@ -493,7 +495,8 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             descriptionDone = 'checked pylint',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'pylint'],
             workdir         = self.BUILDDIR,
-            haltOnFailure   = self.fail_pylint
+            haltOnFailure   = self.fail_pylint,
+            flunkOnFailure  = self.fail_pylint,
         ))
 
         # Perform unit tests (currently not working).
@@ -503,7 +506,8 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             descriptionDone = 'testing',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'test'],
             workdir         = self.BUILDDIR,
-            haltOnFailure   = self.fail_test
+            haltOnFailure   = self.fail_test,
+            flunkOnFailure  = self.fail_test,
         ))
 
         # Include common post-build steps.
