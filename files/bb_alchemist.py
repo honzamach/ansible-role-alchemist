@@ -453,6 +453,9 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
     """
     def __init__(self, project, name, mtype, workername, properties = None, **params):
         AlchemistBuildModule.__init__(self, project, name, mtype, workername, properties)
+        self.fail_pyflakes = params.get('fail_pyflakes', True)
+        self.fail_pylint   = params.get('fail_pylint', True)
+        self.fail_pytest   = params.get('fail_test', True)
 
     def _gen_build_factory(self):
         step_list = []
@@ -480,7 +483,7 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             descriptionDone = 'checked pyflakes',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'pyflakes'],
             workdir         = self.BUILDDIR,
-            haltOnFailure   = False
+            haltOnFailure   = self.fail_pyflakes
         ))
 
         # Check project code with pylint.
@@ -490,7 +493,7 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             descriptionDone = 'checked pylint',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'pylint'],
             workdir         = self.BUILDDIR,
-            haltOnFailure   = False
+            haltOnFailure   = self.fail_pylint
         ))
 
         # Perform unit tests (currently not working).
@@ -500,7 +503,7 @@ class AlchemistBuildCheck(AlchemistBuildModule):  # pylint: disable=locally-disa
             descriptionDone = 'testing',
             command         = [PATH_PROXY_LAUNCHER, 'make', 'test'],
             workdir         = self.BUILDDIR,
-            haltOnFailure   = True
+            haltOnFailure   = self.fail_test
         ))
 
         # Include common post-build steps.
